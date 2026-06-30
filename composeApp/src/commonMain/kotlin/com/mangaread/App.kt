@@ -10,6 +10,13 @@ fun App(viewModel: LibraryViewModel, onPickFolder: () -> Unit) {
     MaterialTheme {
         val series by viewModel.series.collectAsState()
         val progress by viewModel.progress.collectAsState()
-        LibraryScreen(series = series, progress = progress, onPickFolder = onPickFolder)
+        val canRescan by viewModel.canRescan.collectAsState()
+        LibraryScreen(
+            series = series,
+            progress = progress,
+            canRescan = canRescan,
+            onPickFolder = onPickFolder,
+            onRescan = viewModel::rescan,
+        )
     }
 }

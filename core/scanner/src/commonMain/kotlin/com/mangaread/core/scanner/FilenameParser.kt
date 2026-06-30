@@ -30,10 +30,11 @@ object FilenameParser {
         RegexOption.IGNORE_CASE,
     )
 
-    // Chapter: "Chapter 12", "Chapter12", "Ch.001.5", "ch 12", "c012", "#12", "Episode 5".
+    // Chapter: "Chapter 12", "Chapter12", "Ch.001.5", "ch 12", "c012", "#12", "Episode 5",
+    // and the common scanlation misspelling + underscore form "chaper_9" / "chaper_18.5".
     // `\bc(\d)` only fires when a digit immediately follows, so titles like "Crystal" don't match.
     private val chapterRegex = Regex(
-        """(?:\bchap(?:ter)?[\s._]*|\bch[\s._]*|\bep(?:isode)?[\s._]*|\bc|#)(\d+(?:\.\d+)?)""",
+        """(?:\bchap(?:ter|er)?[\s._]*|\bch[\s._]*|\bep(?:isode)?[\s._]*|\bc|#)(\d+(?:\.\d+)?)""",
         RegexOption.IGNORE_CASE,
     )
 

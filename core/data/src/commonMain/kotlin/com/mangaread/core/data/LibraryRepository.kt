@@ -16,8 +16,25 @@ class LibraryRepository(db: MangaDatabase) {
 
     private val q = db.schemaQueries
 
+    private companion object { const val LOCAL_SOURCE_ID = "local" }
+
     fun observeSeries(): Flow<List<DomainSeries>> =
         q.selectAllSeries().asFlow().mapToList(ioDispatcher).map { rows -> rows.map(::toDomain) }
+
+    /** Persist the granted library root so it's remembered across restarts (PLAN.md §5 source table). */
+    suspend fun saveLocalRoot(rootLocator: String, displayName: String) = withContext(ioDispatcher) {
+        q.upsertSource(
+            id = LOCAL_SOURCE_ID,
+            type = "LOCAL",
+            display_name = displayName,
+            config_json = rootLocator,
+            sync_token = null,
+        )
+    }
+
+    suspend fun savedLocalRoot(): String? = withContext(ioDispatcher) {
+        q.selectSourceRoot(LOCAL_SOURCE_ID).executeAsOneOrNull()
+    }
 
     /**
      * Persist one series and its chapters in a single transaction. Idempotent: upserts on

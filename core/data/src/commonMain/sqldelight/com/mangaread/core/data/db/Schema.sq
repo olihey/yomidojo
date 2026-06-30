@@ -51,6 +51,17 @@ CREATE TABLE reading_progress (
 CREATE INDEX chapter_series_idx ON chapter(series_id);
 CREATE INDEX chapter_date_added_idx ON chapter(date_added);
 
+-- Source root (the granted SAF tree) — remembered across restarts ------------
+upsertSource:
+INSERT INTO source(id, type, display_name, config_json, sync_token)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  display_name = excluded.display_name,
+  config_json = excluded.config_json;
+
+selectSourceRoot:
+SELECT config_json FROM source WHERE id = ?;
+
 -- Upsert (idempotent re-scan) -----------------------------------------------
 upsertSeries:
 INSERT INTO series(id, title, sort_title, author, description, cover_path, start_year, reading_direction, external_id, date_added, last_scanned)

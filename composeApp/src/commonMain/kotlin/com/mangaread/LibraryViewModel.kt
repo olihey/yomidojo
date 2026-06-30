@@ -17,10 +17,10 @@ import kotlinx.coroutines.launch
 data class ScanProgress(val seriesFound: Int, val chaptersFound: Int)
 
 /**
- * Phase 1 spine: observe the library reactively from the DB, and run a scan that persists
- * each series as it's found so the list fills in live (important for large collections).
- * Plain class (not androidx.ViewModel) so it stays in commonMain; the SAF folder pick is
- * supplied by the platform layer.
+ * Phase 1 spine: observe the library reactively from the DB, run a scan that persists each
+ * series as it's found (so the list fills in live), and remember the granted library root so
+ * the user can re-scan with one tap. Plain class (commonMain); the SAF folder pick is supplied
+ * by the platform layer.
  */
 class LibraryViewModel(
     private val repository: LibraryRepository,
@@ -33,21 +33,42 @@ class LibraryViewModel(
     private val _progress = MutableStateFlow<ScanProgress?>(null)
     val progress: StateFlow<ScanProgress?> = _progress
 
-    fun scan(rootLocator: String) {
+    /** True once a library root has been picked — enables the re-scan action. */
+    private val _canRescan = MutableStateFlow(false)
+    val canRescan: StateFlow<Boolean> = _canRescan
+
+    init {
+        scope.launch { _canRescan.value = repository.savedLocalRoot() != null }
+    }
+
+    /** Called after the user picks a folder: remember it, then scan. */
+    fun onFolderPicked(rootLocator: String, displayName: String) {
         scope.launch {
-            var seriesCount = 0
-            var chapterCount = 0
-            _progress.value = ScanProgress(0, 0)
-            try {
-                scanner.scan(rootLocator, nowEpochMillis()).collect { scanned ->
-                    repository.persistSeries(scanned.series, scanned.chapters)
-                    seriesCount++
-                    chapterCount += scanned.chapters.size
-                    _progress.value = ScanProgress(seriesCount, chapterCount)
-                }
-            } finally {
-                _progress.value = null
+            repository.saveLocalRoot(rootLocator, displayName)
+            _canRescan.value = true
+            runScan(rootLocator)
+        }
+    }
+
+    /** Re-scan the remembered library root (reconciles via deterministic-ID upsert). */
+    fun rescan() {
+        scope.launch { repository.savedLocalRoot()?.let { runScan(it) } }
+    }
+
+    private suspend fun runScan(rootLocator: String) {
+        if (_progress.value != null) return // already scanning
+        var seriesCount = 0
+        var chapterCount = 0
+        _progress.value = ScanProgress(0, 0)
+        try {
+            scanner.scan(rootLocator, nowEpochMillis()).collect { scanned ->
+                repository.persistSeries(scanned.series, scanned.chapters)
+                seriesCount++
+                chapterCount += scanned.chapters.size
+                _progress.value = ScanProgress(seriesCount, chapterCount)
             }
+        } finally {
+            _progress.value = null
         }
     }
 }

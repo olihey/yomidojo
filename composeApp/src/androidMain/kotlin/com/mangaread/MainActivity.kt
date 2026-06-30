@@ -33,7 +33,8 @@ class MainActivity : ComponentActivity() {
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
-                viewModel.scan(uri.toString())
+                val name = uri.lastPathSegment?.substringAfterLast('/') ?: "Library"
+                viewModel.onFolderPicked(uri.toString(), name)
             }
         }
 

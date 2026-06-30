@@ -28,6 +28,11 @@ class FilenameParserTest {
         Case("Ch. 7 - The Beginning", null, 7.0),
         Case("Episode 5", null, 5.0),
         Case("#42", null, 42.0),
+        // Real-world cases from a 12k-chapter library (see docs/SPIKES.md):
+        Case("chaper_9.cbz", null, 9.0),            // misspelled "chapter" + underscore
+        Case("chaper_18.5.cbz", null, 18.5),
+        Case("Vol. 2.cbz", 2.0, null),              // volume-only file: no chapter number
+        Case("Toradora! v10 (2022) (Digital) (LuCaZ).cbz", 10.0, null),
         // Japanese title with a latin chapter token — title parsing is best-effort,
         // volume marker (巻) is a known gap (volume stays null) until the corpus grows.
         Case("進撃の巨人 c001", null, 1.0),
