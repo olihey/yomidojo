@@ -163,7 +163,7 @@ private fun DetailedLayout(cards: List<LibraryCard>) {
 @Composable
 private fun GridLayout(cards: List<LibraryCard>) {
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(110.dp),
+        columns = GridCells.Adaptive(165.dp),
         modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),

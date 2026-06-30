@@ -22,6 +22,7 @@ enum class ViewMode { LIST, GRID, DETAILED }
 class LibraryViewModel(
     private val repository: LibraryRepository,
     private val scanner: LibraryScanner,
+    private val prefs: LibraryPreferences,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
     private val _progress = MutableStateFlow<ScanProgress?>(null)
@@ -30,12 +31,12 @@ class LibraryViewModel(
     private val _canRescan = MutableStateFlow(false)
     val canRescan: StateFlow<Boolean> = _canRescan
 
-    // Library controls (PLAN §7.1)
+    // Library controls (PLAN §7.1) — initial values restored from persisted prefs.
     val query = MutableStateFlow("")
-    val sort = MutableStateFlow(SortMode.NAME)
-    val ascending = MutableStateFlow(true)
-    val unreadOnly = MutableStateFlow(false)
-    val viewMode = MutableStateFlow(ViewMode.LIST)
+    val sort = MutableStateFlow(prefs.sort)
+    val ascending = MutableStateFlow(prefs.ascending)
+    val unreadOnly = MutableStateFlow(prefs.unreadOnly)
+    val viewMode = MutableStateFlow(prefs.viewMode)
 
     private val allCards: StateFlow<List<LibraryCard>> =
         repository.observeLibrary().stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -55,6 +56,11 @@ class LibraryViewModel(
 
     init {
         scope.launch { _canRescan.value = repository.savedLocalRoot() != null }
+        // Persist view preferences whenever they change (first emit re-writes the current value, harmless).
+        scope.launch { viewMode.collect { prefs.viewMode = it } }
+        scope.launch { sort.collect { prefs.sort = it } }
+        scope.launch { ascending.collect { prefs.ascending = it } }
+        scope.launch { unreadOnly.collect { prefs.unreadOnly = it } }
     }
 
     fun onFolderPicked(rootLocator: String, displayName: String) {

@@ -8,10 +8,12 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import android.content.Context
 import com.mangaread.core.data.LibraryRepository
 import com.mangaread.core.data.DatabaseDriverFactory
 import com.mangaread.core.data.createMangaDatabase
 import com.mangaread.core.scanner.LibraryScanner
+import com.russhwolf.settings.SharedPreferencesSettings
 
 class MainActivity : ComponentActivity() {
 
@@ -24,7 +26,10 @@ class MainActivity : ComponentActivity() {
         val database = createMangaDatabase(DatabaseDriverFactory(applicationContext).create())
         val repository = LibraryRepository(database)
         val scanner = LibraryScanner(SafMangaSource(applicationContext))
-        viewModel = LibraryViewModel(repository, scanner)
+        val prefs = LibraryPreferences(
+            SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
+        )
+        viewModel = LibraryViewModel(repository, scanner, prefs)
 
         pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
