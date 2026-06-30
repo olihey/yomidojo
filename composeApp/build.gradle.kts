@@ -39,6 +39,7 @@ kotlin {
             implementation(libs.cmp.lifecycle.viewmodel.compose)
             implementation(libs.multiplatform.settings)
             implementation(libs.kotlinx.coroutines.core)
+            implementation(libs.coil.compose)
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)

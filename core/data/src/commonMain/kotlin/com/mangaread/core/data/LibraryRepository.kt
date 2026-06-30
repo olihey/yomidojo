@@ -34,6 +34,7 @@ class LibraryRepository(db: MangaDatabase) {
                     chapterCount = r.chapter_count.toInt(),
                     unreadCount = (r.chapter_count - r.read_count).toInt(),
                     latestChapterAdded = r.latest_chapter_added ?: r.date_added,
+                    coverModel = coverModel(r.cover_path, r.cover_format, r.cover_locator),
                 )
             }
         }
@@ -92,6 +93,14 @@ class LibraryRepository(db: MangaDatabase) {
                 }
             }
         }
+
+    private fun coverModel(coverPath: String?, format: String?, locator: String?): String? = when {
+        coverPath != null -> coverPath          // a real cached cover (Phase 3) wins
+        locator == null -> null
+        format == "CBZ" -> "cbz:$locator"
+        format == "IMAGE_DIR" -> "imgdir:$locator"
+        else -> null
+    }
 
     private fun toDomain(r: SeriesRow) = DomainSeries(
         id = r.id,

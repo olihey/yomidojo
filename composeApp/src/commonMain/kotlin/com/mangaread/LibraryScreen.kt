@@ -40,8 +40,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
 import com.mangaread.core.data.LibraryCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -136,7 +138,7 @@ private fun ListLayout(cards: List<LibraryCard>) {
             ListItem(
                 headlineContent = { Text(c.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 supportingContent = { Text("${c.chapterCount} chapters · ${c.unreadCount} unread") },
-                leadingContent = { CoverPlaceholder(c.title, Modifier.size(40.dp, 56.dp)) },
+                leadingContent = { CoverPlaceholder(c.title, Modifier.size(40.dp, 56.dp), c.coverModel) },
             )
             HorizontalDivider()
         }
@@ -148,7 +150,7 @@ private fun DetailedLayout(cards: List<LibraryCard>) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(cards, key = { it.id }) { c ->
             Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                CoverPlaceholder(c.title, Modifier.size(64.dp, 90.dp))
+                CoverPlaceholder(c.title, Modifier.size(64.dp, 90.dp), c.coverModel)
                 Column {
                     Text(c.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     c.author?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -170,20 +172,31 @@ private fun GridLayout(cards: List<LibraryCard>) {
     ) {
         gridItems(cards, key = { it.id }) { c ->
             Column {
-                CoverPlaceholder(c.title, Modifier.fillMaxWidth().aspectRatio(0.7f))
+                CoverPlaceholder(c.title, Modifier.fillMaxWidth().aspectRatio(0.7f), c.coverModel)
                 Text(c.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }
 }
 
-/** Placeholder until real covers arrive (Phase 3): a tinted box with the title's first letter. */
+/**
+ * Cover = first page of the series (extracted from the folder/CBZ by the platform cover
+ * fetcher), layered over a tinted letter placeholder that shows while loading or on failure.
+ */
 @Composable
-private fun CoverPlaceholder(title: String, modifier: Modifier = Modifier) {
+private fun CoverPlaceholder(title: String, modifier: Modifier = Modifier, model: String? = null) {
     Box(
         modifier.clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
         Text(title.trim().take(1).uppercase(), style = MaterialTheme.typography.titleLarge)
+        if (model != null) {
+            AsyncImage(
+                model = model,
+                contentDescription = title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+        }
     }
 }

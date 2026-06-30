@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.withContext
 import okio.Source
+import okio.source
 
 /**
  * Android Storage Access Framework source (PLAN.md §6, §12). Locators are tree-document
@@ -65,8 +66,11 @@ class SafMangaSource(private val context: Context) : MangaSource {
         entries
     }
 
-    override suspend fun open(locator: String): Source =
-        TODO("ReadHandle for IMAGE_DIR/CBZ pages — Phase 2 reader")
+    override suspend fun open(locator: String): Source = withContext(ioDispatcher) {
+        val stream = context.contentResolver.openInputStream(Uri.parse(locator))
+            ?: error("Cannot open $locator")
+        stream.source()
+    }
 
     override suspend fun changesSince(token: String?): ChangeSet = ChangeSet(emptyList(), null)
 

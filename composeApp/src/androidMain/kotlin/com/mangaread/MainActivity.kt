@@ -14,6 +14,8 @@ import com.mangaread.core.data.DatabaseDriverFactory
 import com.mangaread.core.data.createMangaDatabase
 import com.mangaread.core.scanner.LibraryScanner
 import com.russhwolf.settings.SharedPreferencesSettings
+import coil3.ImageLoader
+import coil3.SingletonImageLoader
 
 class MainActivity : ComponentActivity() {
 
@@ -23,9 +25,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val source = SafMangaSource(applicationContext)
+        SingletonImageLoader.setSafe { ctx ->
+            ImageLoader.Builder(ctx)
+                .components { add(CoverFetcher.Factory(applicationContext, source)) }
+                .build()
+        }
+
         val database = createMangaDatabase(DatabaseDriverFactory(applicationContext).create())
         val repository = LibraryRepository(database)
-        val scanner = LibraryScanner(SafMangaSource(applicationContext))
+        val scanner = LibraryScanner(source)
         val prefs = LibraryPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
