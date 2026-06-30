@@ -170,6 +170,14 @@ Notes:
 - **Read-state is derived** (`unread chapters == 0`), so a finished series that gains
   new files auto-becomes unread and re-surfaces from "hide read."
 - **`updated_at` does double duty:** the "recently read" sort and the sync merge.
+- **UPSERT needs SQLite ≥ 3.24 — open minSdk decision.** The reconcile relies on
+  `ON CONFLICT … DO UPDATE`, which Android ships only on **API 30+**. `minSdk` is 26, so to
+  honor that floor either (a) **bump `minSdk` to 30**, or (b) **bundle a modern SQLite**
+  (e.g. `requery/sqlite-android`, the approach Mihon uses) and point the SQLDelight Android
+  driver at it. `INSERT OR REPLACE` is **not** an option — with `ON DELETE CASCADE` it would
+  delete a series' chapters/progress on every re-scan. Codegen already targets the 3.24
+  dialect; pick (a) or (b) in Phase 1. (A modern Galaxy Tab is API 30+, so dev builds run
+  fine in the meantime.)
 
 ---
 
