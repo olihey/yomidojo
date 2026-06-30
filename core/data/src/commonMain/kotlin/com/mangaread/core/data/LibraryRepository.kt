@@ -21,6 +21,23 @@ class LibraryRepository(db: MangaDatabase) {
     fun observeSeries(): Flow<List<DomainSeries>> =
         q.selectAllSeries().asFlow().mapToList(ioDispatcher).map { rows -> rows.map(::toDomain) }
 
+    /** Library cards (series + counts), reactive. Sorting/filtering happens in the VM. */
+    fun observeLibrary(): Flow<List<LibraryCard>> =
+        q.selectLibrary().asFlow().mapToList(ioDispatcher).map { rows ->
+            rows.map { r ->
+                LibraryCard(
+                    id = r.id,
+                    title = r.title,
+                    sortTitle = r.sort_title,
+                    author = r.author,
+                    coverPath = r.cover_path,
+                    chapterCount = r.chapter_count.toInt(),
+                    unreadCount = (r.chapter_count - r.read_count).toInt(),
+                    latestChapterAdded = r.latest_chapter_added ?: r.date_added,
+                )
+            }
+        }
+
     /** Persist the granted library root so it's remembered across restarts (PLAN.md §5 source table). */
     suspend fun saveLocalRoot(rootLocator: String, displayName: String) = withContext(ioDispatcher) {
         q.upsertSource(

@@ -86,6 +86,18 @@ ON CONFLICT(id) DO UPDATE SET
 selectAllSeries:
 SELECT * FROM series ORDER BY sort_title ASC;
 
+-- Library cards: each series with chapter count, read count, and newest chapter time.
+selectLibrary:
+SELECT
+  s.id, s.title, s.sort_title, s.author, s.cover_path, s.date_added,
+  COUNT(DISTINCT c.id) AS chapter_count,
+  COUNT(DISTINCT CASE WHEN p.completed = 1 THEN c.id END) AS read_count,
+  MAX(c.date_added) AS latest_chapter_added
+FROM series s
+LEFT JOIN chapter c ON c.series_id = s.id
+LEFT JOIN reading_progress p ON p.chapter_id = c.id
+GROUP BY s.id;
+
 selectChaptersForSeries:
 SELECT * FROM chapter WHERE series_id = ? ORDER BY volume ASC, number ASC;
 

@@ -1,38 +1,61 @@
 package com.mangaread
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mangaread.core.domain.Series
+import com.mangaread.core.data.LibraryCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(
-    series: List<Series>,
-    progress: ScanProgress?,
-    canRescan: Boolean,
-    onPickFolder: () -> Unit,
-    onRescan: () -> Unit,
-) {
+fun LibraryScreen(viewModel: LibraryViewModel, onPickFolder: () -> Unit) {
+    val progress by viewModel.progress.collectAsState()
+    val canRescan by viewModel.canRescan.collectAsState()
+    val cards by viewModel.cards.collectAsState()
+    val query by viewModel.query.collectAsState()
+    val sort by viewModel.sort.collectAsState()
+    val ascending by viewModel.ascending.collectAsState()
+    val unreadOnly by viewModel.unreadOnly.collectAsState()
+    val viewMode by viewModel.viewMode.collectAsState()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -40,16 +63,15 @@ fun LibraryScreen(
                     if (progress != null) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             CircularProgressIndicator(Modifier.size(20.dp))
-                            Text("Scanning… ${progress.seriesFound} series, ${progress.chaptersFound} chapters")
+                            Text("Scanning… ${progress!!.seriesFound} series, ${progress!!.chaptersFound} chapters")
                         }
                     } else {
-                        Text("Library (${series.size})")
+                        Text("Library (${cards.size})")
                     }
                 },
                 actions = {
-                    if (canRescan && progress == null) {
-                        TextButton(onClick = onRescan) { Text("Re-scan") }
-                    }
+                    TextButton(onClick = viewModel::cycleViewMode) { Text(viewMode.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                    if (canRescan && progress == null) TextButton(onClick = viewModel::rescan) { Text("Re-scan") }
                 },
             )
         },
@@ -57,20 +79,111 @@ fun LibraryScreen(
             FloatingActionButton(onClick = onPickFolder) { Text("+", Modifier.padding(4.dp)) }
         },
     ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize()) {
-            if (series.isEmpty() && progress == null) {
-                Text(
-                    "No series yet — tap + to pick your manga folder.",
-                    Modifier.align(Alignment.Center).padding(24.dp),
-                )
-            } else {
-                LazyColumn(Modifier.fillMaxSize().fillMaxWidth()) {
-                    items(series, key = { it.id }) { s ->
-                        ListItem(headlineContent = { Text(s.title) })
-                        HorizontalDivider()
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            LibraryControls(viewModel, query, sort, ascending, unreadOnly)
+            if (cards.isEmpty() && progress == null && query.isBlank()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No series yet — tap + to pick your manga folder.", Modifier.padding(24.dp))
+                }
+            } else when (viewMode) {
+                ViewMode.LIST -> ListLayout(cards)
+                ViewMode.GRID -> GridLayout(cards)
+                ViewMode.DETAILED -> DetailedLayout(cards)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LibraryControls(
+    viewModel: LibraryViewModel,
+    query: String,
+    sort: SortMode,
+    ascending: Boolean,
+    unreadOnly: Boolean,
+) {
+    Column(Modifier.padding(horizontal = 12.dp).padding(bottom = 8.dp)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { viewModel.query.value = it },
+            placeholder = { Text("Search") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            var sortOpen by remember { mutableStateOf(false) }
+            Box {
+                TextButton(onClick = { sortOpen = true }) { Text("Sort: ${sort.label}") }
+                DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
+                    SortMode.entries.forEach { mode ->
+                        DropdownMenuItem(text = { Text(mode.label) }, onClick = {
+                            viewModel.sort.value = mode; sortOpen = false
+                        })
                     }
                 }
             }
+            TextButton(onClick = viewModel::toggleDirection) { Text(if (ascending) "↑ Asc" else "↓ Desc") }
+            FilterChip(selected = unreadOnly, onClick = { viewModel.unreadOnly.value = !unreadOnly }, label = { Text("Unread") })
         }
+    }
+}
+
+@Composable
+private fun ListLayout(cards: List<LibraryCard>) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        items(cards, key = { it.id }) { c ->
+            ListItem(
+                headlineContent = { Text(c.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                supportingContent = { Text("${c.chapterCount} chapters · ${c.unreadCount} unread") },
+                leadingContent = { CoverPlaceholder(c.title, Modifier.size(40.dp, 56.dp)) },
+            )
+            HorizontalDivider()
+        }
+    }
+}
+
+@Composable
+private fun DetailedLayout(cards: List<LibraryCard>) {
+    LazyColumn(Modifier.fillMaxSize()) {
+        items(cards, key = { it.id }) { c ->
+            Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                CoverPlaceholder(c.title, Modifier.size(64.dp, 90.dp))
+                Column {
+                    Text(c.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    c.author?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    Text("${c.chapterCount} chapters · ${c.unreadCount} unread", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            HorizontalDivider()
+        }
+    }
+}
+
+@Composable
+private fun GridLayout(cards: List<LibraryCard>) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(110.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        gridItems(cards, key = { it.id }) { c ->
+            Column {
+                CoverPlaceholder(c.title, Modifier.fillMaxWidth().aspectRatio(0.7f))
+                Text(c.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
+
+/** Placeholder until real covers arrive (Phase 3): a tinted box with the title's first letter. */
+@Composable
+private fun CoverPlaceholder(title: String, modifier: Modifier = Modifier) {
+    Box(
+        modifier.clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(title.trim().take(1).uppercase(), style = MaterialTheme.typography.titleLarge)
     }
 }
