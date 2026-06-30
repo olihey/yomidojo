@@ -1,0 +1,97 @@
+-- Schema mirrors PLAN.md §5. IDs are deterministic (see core:domain deterministicId):
+-- hash(source_id + normalized locator). Re-scans UPSERT — never duplicate the library.
+
+CREATE TABLE source (
+  id           TEXT NOT NULL PRIMARY KEY,
+  type         TEXT NOT NULL,        -- LOCAL | ONEDRIVE | WEBDAV ...
+  display_name TEXT NOT NULL,
+  config_json  TEXT NOT NULL,        -- granted root (SAF URI / iOS bookmark), creds ref
+  sync_token   TEXT
+);
+
+CREATE TABLE series (
+  id                 TEXT NOT NULL PRIMARY KEY,
+  title              TEXT NOT NULL,
+  sort_title         TEXT NOT NULL,      -- frozen-normalized; sync fallback key (§10)
+  author             TEXT,
+  description        TEXT,
+  cover_path         TEXT,               -- app-internal storage path (§9)
+  start_year         INTEGER,
+  reading_direction  TEXT,
+  external_id        TEXT,               -- AniList Media id; primary sync key
+  date_added         INTEGER NOT NULL,
+  last_scanned       INTEGER
+);
+
+CREATE TABLE chapter (
+  id           TEXT NOT NULL PRIMARY KEY,
+  series_id    TEXT NOT NULL,
+  source_id    TEXT NOT NULL,
+  locator      TEXT NOT NULL,
+  format       TEXT NOT NULL,            -- IMAGE_DIR | CBZ (PDF reserved; TEXT = no migration)
+  display_name TEXT NOT NULL,
+  volume       REAL,                     -- from the PARSER (null -> flat list)
+  number       REAL,                     -- from the PARSER; supports 12.5
+  page_count   INTEGER,
+  size         INTEGER,
+  change_token TEXT,
+  date_added   INTEGER NOT NULL,         -- drives "recently added"
+  FOREIGN KEY (series_id) REFERENCES series(id) ON DELETE CASCADE
+);
+
+CREATE TABLE reading_progress (
+  chapter_id      TEXT NOT NULL PRIMARY KEY,
+  last_page_index INTEGER NOT NULL DEFAULT 0,
+  completed       INTEGER NOT NULL DEFAULT 0,
+  updated_at      INTEGER NOT NULL,      -- "recently read" sort AND sync last-write-wins
+  device_id       TEXT,
+  FOREIGN KEY (chapter_id) REFERENCES chapter(id) ON DELETE CASCADE
+);
+
+CREATE INDEX chapter_series_idx ON chapter(series_id);
+CREATE INDEX chapter_date_added_idx ON chapter(date_added);
+
+-- Upsert (idempotent re-scan) -----------------------------------------------
+upsertSeries:
+INSERT INTO series(id, title, sort_title, author, description, cover_path, start_year, reading_direction, external_id, date_added, last_scanned)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  title = excluded.title,
+  sort_title = excluded.sort_title,
+  last_scanned = excluded.last_scanned;
+
+upsertChapter:
+INSERT INTO chapter(id, series_id, source_id, locator, format, display_name, volume, number, page_count, size, change_token, date_added)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  display_name = excluded.display_name,
+  volume = excluded.volume,
+  number = excluded.number,
+  page_count = excluded.page_count,
+  size = excluded.size,
+  change_token = excluded.change_token;
+
+-- Reactive reads ------------------------------------------------------------
+selectAllSeries:
+SELECT * FROM series ORDER BY sort_title ASC;
+
+selectChaptersForSeries:
+SELECT * FROM chapter WHERE series_id = ? ORDER BY volume ASC, number ASC;
+
+-- Derived unread count drives hide-read and the cover badge (§7).
+unreadCountForSeries:
+SELECT COUNT(*) FROM chapter c
+LEFT JOIN reading_progress p ON p.chapter_id = c.id
+WHERE c.series_id = ? AND (p.completed IS NULL OR p.completed = 0);
+
+recentlyAddedChapters:
+SELECT * FROM chapter ORDER BY date_added DESC LIMIT ?;
+
+upsertProgress:
+INSERT INTO reading_progress(chapter_id, last_page_index, completed, updated_at, device_id)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(chapter_id) DO UPDATE SET
+  last_page_index = excluded.last_page_index,
+  completed = excluded.completed,
+  updated_at = excluded.updated_at,
+  device_id = excluded.device_id;
