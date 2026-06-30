@@ -93,13 +93,16 @@ SELECT
   COUNT(DISTINCT c.id) AS chapter_count,
   COUNT(DISTINCT CASE WHEN p.completed = 1 THEN c.id END) AS read_count,
   MAX(c.date_added) AS latest_chapter_added,
-  (SELECT ch.locator FROM chapter ch WHERE ch.series_id = s.id
-     ORDER BY ch.volume IS NULL, ch.volume, ch.number IS NULL, ch.number, ch.display_name LIMIT 1) AS cover_locator,
-  (SELECT ch.format FROM chapter ch WHERE ch.series_id = s.id
-     ORDER BY ch.volume IS NULL, ch.volume, ch.number IS NULL, ch.number, ch.display_name LIMIT 1) AS cover_format
+  cover.locator AS cover_locator,
+  cover.format AS cover_format
 FROM series s
 LEFT JOIN chapter c ON c.series_id = s.id
 LEFT JOIN reading_progress p ON p.chapter_id = c.id
+-- Cover = first chapter; via LEFT JOIN so the columns are nullable for chapter-less series.
+LEFT JOIN chapter cover ON cover.id = (
+  SELECT ch.id FROM chapter ch WHERE ch.series_id = s.id
+  ORDER BY ch.volume IS NULL, ch.volume, ch.number IS NULL, ch.number, ch.display_name LIMIT 1
+)
 GROUP BY s.id;
 
 selectChaptersForSeries:
