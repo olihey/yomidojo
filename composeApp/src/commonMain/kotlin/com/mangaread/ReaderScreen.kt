@@ -361,35 +361,50 @@ private fun ContinuousReader(
                 )
             },
         ) { scale, offset ->
-            LazyColumn(
-                state = listState,
-                userScrollEnabled = !isZoomedIn(scale),
-                modifier = Modifier.fillMaxSize().graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offset.x,
-                    translationY = offset.y,
-                    transformOrigin = ZoomPivot,
-                ),
-            ) {
-                items(pageCount, key = { it }) { index ->
-                    WebtoonPage(
-                        pageModel = viewModel.pageModel,
-                        index = index,
-                        // Reserves the image's real height up front instead of measuring it as
-                        // zero/placeholder-sized until Coil decodes the bitmap — otherwise, as each
-                        // of many short images resolved its true (small) height, LazyColumn kept
-                        // remeasuring to keep the viewport filled and walked the scroll position
-                        // forward with no user input, landing on the last page on open.
-                        aspectRatio = pageAspectRatios[index],
-                    )
-                }
-                nextChapter?.let { next ->
-                    item(key = "next_chapter") {
-                        Box(
-                            Modifier.fillParentMaxSize().clickable { onNavigateToChapter(next.id) },
-                        ) {
-                            NextChapterPreview(next)
+            // Zooming out should reveal more of the strip filling the screen, not shrink a fixed
+            // viewport's worth of already-laid-out content into a smaller floating rectangle with
+            // blank borders top and bottom — a LazyColumn only composes what its own measured
+            // height calls for, so a plain post-layout scale-down leaves the freed-up space empty
+            // instead of full of more (not-yet-composed) content. Giving it *more* virtual height
+            // to lay out into — exactly enough that scaling the taller result back down lands flush
+            // with the physical viewport — fixes that by construction. Zooming in is unaffected: it
+            // keeps the existing pan-while-scroll-disabled model, which has no such gap to begin
+            // with (there's always "more" to shrink toward, never less).
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                val columnHeight = if (scale < 1f) maxHeight / scale else maxHeight
+                LazyColumn(
+                    state = listState,
+                    userScrollEnabled = !isZoomedIn(scale),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(columnHeight)
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            translationX = offset.x,
+                            translationY = if (scale < 1f) 0f else offset.y,
+                            transformOrigin = ZoomPivot,
+                        ),
+                ) {
+                    items(pageCount, key = { it }) { index ->
+                        WebtoonPage(
+                            pageModel = viewModel.pageModel,
+                            index = index,
+                            // Reserves the image's real height up front instead of measuring it as
+                            // zero/placeholder-sized until Coil decodes the bitmap — otherwise, as each
+                            // of many short images resolved its true (small) height, LazyColumn kept
+                            // remeasuring to keep the viewport filled and walked the scroll position
+                            // forward with no user input, landing on the last page on open.
+                            aspectRatio = pageAspectRatios[index],
+                        )
+                    }
+                    nextChapter?.let { next ->
+                        item(key = "next_chapter") {
+                            Box(
+                                Modifier.fillParentMaxSize().clickable { onNavigateToChapter(next.id) },
+                            ) {
+                                NextChapterPreview(next)
+                            }
                         }
                     }
                 }

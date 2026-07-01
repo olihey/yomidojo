@@ -321,7 +321,18 @@ lambda through a `VerticalPager` instead (top/bottom tap zones, no RTL concept).
 chrome, and the same pinch/double-tap zoom as the paged modes applies to the *whole column at
 once* (`Zoomable` wraps the `LazyColumn` itself, not each page — zooming only the touched page
 wouldn't be seamless with the rest of the continuous scroll) — zooming in disables the column's
-own scroll (`userScrollEnabled`) so a pan on the zoomed strip doesn't also scroll it. It does
+own scroll (`userScrollEnabled`) so a pan on the zoomed strip doesn't also scroll it. Zooming
+*out* has its own wrinkle: a `graphicsLayer(scaleY < 1)` shrinks whatever the `LazyColumn` already
+laid out, which leaves blank vertical borders top/bottom because a virtualized column only ever
+composes enough items to fill its *own* measured height — a post-layout scale-down can't
+retroactively compose more to fill the freed-up space. Fixed by wrapping the column in
+`BoxWithConstraints` and, whenever `scale < 1f`, giving it a taller-than-viewport height
+(`maxHeight / scale`) so it composes more of the strip; scaling that taller render back down by
+`scale` lands exactly flush with the physical viewport (`(maxHeight/scale) * scale == maxHeight`),
+so the strip always runs top-to-bottom with no gap. Zoom-in isn't affected — there's always "more"
+to shrink toward there, never less, so the plain `graphicsLayer` scale-down was never a problem in
+that direction. (Horizontal letterboxing when zoomed out is left as-is — only the vertical gap
+was ever visible as a problem, since the column is already `fillMaxWidth`.) It does
 share the next-chapter transition:
 scrolling past the last page reaches a `NextChapterPreview` list item sized to exactly one
 viewport (`fillParentMaxSize`), so scrolling it fully into view is simultaneously hitting the
@@ -369,8 +380,9 @@ when pages merely display:
   own scroll or tap-to-navigate the way zooming *in* does (`isZoomedIn` vs the double-tap-only
   `isZoomed`, both in `ReaderScreen.kt`) — a shrunk page still scrolls and taps normally, so
   there's no "must pinch back in first" trap. Releasing a pinch that ended below 1× recenters the
-  shrunk page in place (`ZoomableImage.recenter`, animated) rather than resetting scale to 1 —
-  the page stays whatever size the user chose.
+  shrunk content in place (`Zoomable.recenter`, animated) rather than resetting scale to 1 —
+  it stays whatever size the user chose. In `ContinuousReader` this only recenters the offset;
+  the `BoxWithConstraints`/virtual-height mechanism (§8) is what keeps the strip itself gap-free.
 - **One-time gesture-help overlay** on first open of the reader, dismissible.
 - **Immersive mode tied to the chrome overlay.** System status/navigation bars follow the same
   `showChrome` state as the series/chapter info + progress bar (`ImmersiveMode(enabled =
