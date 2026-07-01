@@ -124,7 +124,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
                 readingMode = readingMode,
                 onReadingModeChange = viewModel::setReadingMode,
                 showChrome = showChrome,
-                onShowChromeChange = { showChrome = it },
+                onToggleChrome = { showChrome = !showChrome },
                 onScrubbingChanged = { isScrubbing = it },
                 onBack = onBack,
                 onNavigateToChapter = onNavigateToChapter,
@@ -137,7 +137,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
                 readingMode = readingMode,
                 readingDirectionRtl = readingDirectionRtl,
                 showChrome = showChrome,
-                onShowChromeChange = { showChrome = it },
+                onToggleChrome = { showChrome = !showChrome },
                 onScrubbingChanged = { isScrubbing = it },
                 onBack = onBack,
                 onNavigateToChapter = onNavigateToChapter,
@@ -164,7 +164,7 @@ private fun PagedReader(
     readingMode: ReadingMode,
     readingDirectionRtl: Boolean,
     showChrome: Boolean,
-    onShowChromeChange: (Boolean) -> Unit,
+    onToggleChrome: () -> Unit,
     onScrubbingChanged: (Boolean) -> Unit,
     onBack: () -> Unit,
     onNavigateToChapter: (String) -> Unit,
@@ -219,7 +219,7 @@ private fun PagedReader(
                     when (zone) {
                         TapZone.FORWARD -> scrollBy(pagerState, scope, 1, units.size)
                         TapZone.BACKWARD -> scrollBy(pagerState, scope, -1, units.size)
-                        TapZone.MENU -> onShowChromeChange(!showChrome)
+                        TapZone.MENU -> onToggleChrome()
                     }
                 }
                 when (val unit = units[unitIndex]) {
@@ -296,7 +296,7 @@ private fun ContinuousReader(
     readingMode: ReadingMode,
     onReadingModeChange: (ReadingMode) -> Unit,
     showChrome: Boolean,
-    onShowChromeChange: (Boolean) -> Unit,
+    onToggleChrome: () -> Unit,
     onScrubbingChanged: (Boolean) -> Unit,
     onBack: () -> Unit,
     onNavigateToChapter: (String) -> Unit,
@@ -329,7 +329,7 @@ private fun ContinuousReader(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().pointerInput(Unit) {
-                detectTapGestures(onTap = { onShowChromeChange(!showChrome) })
+                detectTapGestures(onTap = { onToggleChrome() })
             },
         ) {
             items(pageCount, key = { it }) { index ->
