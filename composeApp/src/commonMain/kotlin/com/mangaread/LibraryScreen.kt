@@ -48,6 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.mangaread.core.data.LibraryCard
 
@@ -214,7 +215,10 @@ private fun ListLayout(
                     if (selectionMode) {
                         Checkbox(checked = c.id in selectedIds, onCheckedChange = { onClick(c.id) })
                     } else {
-                        CoverPlaceholder(c.title, Modifier.size(40.dp, 56.dp), c.coverModel)
+                        Box {
+                            CoverPlaceholder(c.title, Modifier.size(40.dp, 56.dp), c.coverModel)
+                            SeriesReadStatusOverlay(c, Modifier.align(Alignment.BottomEnd), size = 16.dp)
+                        }
                     }
                 },
             )
@@ -244,7 +248,10 @@ private fun DetailedLayout(
                 if (selectionMode) {
                     Checkbox(checked = c.id in selectedIds, onCheckedChange = { onClick(c.id) })
                 } else {
-                    CoverPlaceholder(c.title, Modifier.size(64.dp, 90.dp), c.coverModel)
+                    Box {
+                        CoverPlaceholder(c.title, Modifier.size(64.dp, 90.dp), c.coverModel)
+                        SeriesReadStatusOverlay(c, Modifier.align(Alignment.BottomEnd).padding(2.dp))
+                    }
                 }
                 Column {
                     Text(c.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -276,6 +283,7 @@ private fun GridLayout(
             Column(Modifier.combinedClickable(onClick = { onClick(c.id) }, onLongClick = { onLongClick(c.id) })) {
                 Box {
                     CoverPlaceholder(c.title, Modifier.fillMaxWidth().aspectRatio(0.7f), c.coverModel)
+                    SeriesReadStatusOverlay(c, Modifier.align(Alignment.BottomEnd).padding(4.dp))
                     if (selectionMode) {
                         Checkbox(
                             checked = c.id in selectedIds,
@@ -287,6 +295,48 @@ private fun GridLayout(
                 Text(c.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
+    }
+}
+
+/**
+ * Series-level read status, mirroring the chapter-cover overlay (PLAN.md §7.2): unread → nothing;
+ * some but not all chapters read → a ring filled to the percentage with the number inside;
+ * fully read → a check disc.
+ */
+@Composable
+private fun SeriesReadStatusOverlay(card: LibraryCard, modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 24.dp) {
+    if (card.chapterCount <= 0) return
+    val readCount = card.chapterCount - card.unreadCount
+
+    if (card.unreadCount == 0) {
+        Box(
+            modifier.size(size).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("✓", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall)
+        }
+        return
+    }
+
+    if (readCount <= 0) return
+    val percent = readCount * 100 / card.chapterCount
+
+    Box(
+        modifier.size(size).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.7f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator(
+            progress = { percent / 100f },
+            modifier = Modifier.fillMaxSize().padding(3.dp),
+            strokeWidth = 2.dp,
+            color = androidx.compose.ui.graphics.Color.White,
+            trackColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.3f),
+        )
+        Text(
+            "$percent",
+            color = androidx.compose.ui.graphics.Color.White,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+        )
     }
 }
 
