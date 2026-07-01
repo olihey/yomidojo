@@ -318,7 +318,10 @@ preview slot, pinch-zoom, and tap zones; `VERTICAL_PAGED` reuses the *exact same
 lambda through a `VerticalPager` instead (top/bottom tap zones, no RTL concept). Both live in
 `PagedReader`. `VERTICAL_CONTINUOUS` (webtoon) is a separate, deliberately simpler
 `ContinuousReader`: a plain `LazyColumn` of full-width images, single-tap-anywhere toggles the
-chrome, no pinch-zoom and no next-chapter preview yet — designed-for, not built.
+chrome, no pinch-zoom yet — designed-for, not built. It does share the next-chapter transition:
+scrolling past the last page reaches a `NextChapterPreview` list item sized to the viewport;
+tapping it navigates (no settle-detection like the paged pager, since a `LazyColumn` has no
+snap point to settle on).
 
 **Double-page spread detection.** Strategy: **aspect-ratio heuristic** — a page wider than
 tall is treated as a pre-stitched spread and shown alone; portrait pages are paired two-up on
@@ -364,7 +367,9 @@ when pages merely display:
   chapter's cover (sliding in with the same swipe motion, RTL-aware since it's just another
   pager item); settling on it (not just overscrolling through during a fling) switches to that
   chapter, replacing the current back-stack entry. Tap-zone forward/back stay clamped to real
-  pages — only a swipe can reach the preview.
+  pages — only a swipe can reach the preview. In `VERTICAL_CONTINUOUS`, the equivalent is a
+  `NextChapterPreview` item appended to the `LazyColumn`; tapping it (rather than settling) is
+  the trigger, since a continuous scroll has no snap point.
 
 Tap-zone layout and the volume-key toggle live in settings (multiplatform-settings).
 

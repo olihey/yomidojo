@@ -1,6 +1,7 @@
 package com.mangaread
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -125,6 +126,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
                 onShowChromeChange = { showChrome = it },
                 onScrubbingChanged = { isScrubbing = it },
                 onBack = onBack,
+                onNavigateToChapter = onNavigateToChapter,
             )
         } else {
             PagedReader(
@@ -283,7 +285,8 @@ private fun PagedReader(
 
 /** VERTICAL_CONTINUOUS (webtoon): every page stacked in one continuously scrollable column, no
  * snapping. Simpler interaction than the paged modes — a single tap anywhere toggles the chrome;
- * no pinch-zoom or next-chapter preview yet (designed-for, not built — PLAN.md §8.1). */
+ * no pinch-zoom yet (designed-for, not built — PLAN.md §8.1). Scrolling past the last page reaches
+ * a next-chapter preview slot, same as the paged modes; tapping it switches chapters. */
 @Composable
 private fun ContinuousReader(
     viewModel: ReaderViewModel,
@@ -294,9 +297,11 @@ private fun ContinuousReader(
     onShowChromeChange: (Boolean) -> Unit,
     onScrubbingChanged: (Boolean) -> Unit,
     onBack: () -> Unit,
+    onNavigateToChapter: (String) -> Unit,
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = viewModel.currentPage.value.coerceIn(0, pageCount - 1))
     val scope = rememberCoroutineScope()
+    val nextChapter by viewModel.nextChapter.collectAsState()
 
     LaunchedEffect(listState) {
         snapshotFlow { listState.firstVisibleItemIndex }.collect { index ->
@@ -318,6 +323,15 @@ private fun ContinuousReader(
                     contentScale = ContentScale.FillWidth,
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            nextChapter?.let { next ->
+                item(key = "next_chapter") {
+                    Box(
+                        Modifier.fillParentMaxSize().clickable { onNavigateToChapter(next.id) },
+                    ) {
+                        NextChapterPreview(next)
+                    }
+                }
             }
         }
         if (showChrome) {
