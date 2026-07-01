@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -58,6 +59,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
@@ -287,8 +289,10 @@ private fun PagedReader(
 
 /** VERTICAL_CONTINUOUS (webtoon): every page stacked in one continuously scrollable column, no
  * snapping. Simpler interaction than the paged modes — a single tap anywhere toggles the chrome;
- * no pinch-zoom yet (designed-for, not built — PLAN.md §8.1). Scrolling past the last page reaches
- * a next-chapter preview slot, same as the paged modes; scrolling it fully into view (or tapping
+ * each page supports the same double-tap/pinch zoom as the paged modes, which disables the
+ * column's own scrolling while zoomed (mirroring the paged pager's `userScrollEnabled`) so a pan
+ * on a zoomed image doesn't also scroll the list. Scrolling past the last page reaches a
+ * next-chapter preview slot, same as the paged modes; scrolling it fully into view (or tapping
  * it) switches chapters. */
 @Composable
 private fun ContinuousReader(
@@ -312,6 +316,7 @@ private fun ContinuousReader(
     // passive settling looked identical to "the user scrolled to the end", so short chapters
     // auto-completed and cascaded into the next one (and the next…) before anyone had read them.
     var hasInteracted by remember { mutableStateOf(false) }
+    var anyZoomed by remember { mutableStateOf(false) }
 
     LaunchedEffect(listState) {
         snapshotFlow { listState.firstVisibleItemIndex }.collect { index ->
@@ -334,21 +339,22 @@ private fun ContinuousReader(
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = Modifier.fillMaxSize().pointerInput(Unit) {
-                detectTapGestures(onPress = { hasInteracted = true }, onTap = { onToggleChrome() })
-            },
+            userScrollEnabled = !anyZoomed,
+            modifier = Modifier.fillMaxSize(),
         ) {
             items(pageCount, key = { it }) { index ->
-                AsyncImage(
-                    model = MangaPage(viewModel.pageModel, index),
-                    contentDescription = "Page ${index + 1}",
-                    contentScale = ContentScale.FillWidth,
+                WebtoonPage(
+                    pageModel = viewModel.pageModel,
+                    index = index,
                     // Reserves the image's real height up front instead of measuring it as
                     // zero/placeholder-sized until Coil decodes the bitmap — otherwise, as each
                     // of many short images resolved its true (small) height, LazyColumn kept
                     // remeasuring to keep the viewport filled and walked the scroll position
                     // forward with no user input, landing on the last page on open.
-                    modifier = Modifier.fillMaxWidth().aspectRatio(pageAspectRatios[index]),
+                    aspectRatio = pageAspectRatios[index],
+                    onInteracted = { hasInteracted = true },
+                    onZoomChanged = { anyZoomed = it },
+                    onTap = { onToggleChrome() },
                 )
             }
             nextChapter?.let { next ->
@@ -537,6 +543,86 @@ private fun computeTapZone(pos: Offset, size: IntSize, isRtl: Boolean, invertTap
     }
 }
 
+/** Zoom pivot pinned to the content's own top-left, so [zoomOffset] alone (not a moving
+ * `transformOrigin`) is what keeps an arbitrary pinch/double-tap point visually still. */
+private val ZoomPivot = TransformOrigin(0f, 0f)
+
+/**
+ * New translation that keeps the point at [centroid] visually fixed (plus any [pan] the fingers
+ * made since) when scale changes from [oldScale] to [newScale], given [ZoomPivot] is the origin.
+ * Derived from `screen(p) = p * scale + translation`: solve for the local point under the
+ * centroid before the change, then require it renders at `centroid + pan` after.
+ */
+private fun zoomOffset(offset: Offset, oldScale: Float, newScale: Float, centroid: Offset, pan: Offset): Offset {
+    val ratio = newScale / oldScale
+    return offset * ratio + centroid * (1f - ratio) + pan
+}
+
+/** Pinch/double-tap zoom shared by [ReaderPage] and [WebtoonPage]: scales/pans an [AsyncImage] in
+ * a `graphicsLayer`, pivoting around wherever the gesture actually is via [zoomOffset] rather than
+ * always around the screen's center. [onGesture] runs first on every pointer event (pinch or
+ * plain drag) so callers can track "the user touched the reader" independent of whether a zoom
+ * actually resulted; it only takes over the gesture for 2+ fingers or once already zoomed, so a
+ * plain single-finger drag at scale 1 is left untouched to reach the pager's swipe or the
+ * webtoon column's own scroll. */
+@Composable
+private fun ZoomableImage(
+    pageModel: String,
+    index: Int,
+    contentScale: ContentScale,
+    onZoomChanged: (Boolean) -> Unit,
+    onGesture: () -> Unit,
+    modifier: Modifier,
+    tapGestures: suspend PointerInputScope.(zoomed: () -> Boolean, applyZoom: (Float, Offset, Offset) -> Unit) -> Unit,
+) {
+    // Keyed on `index` so zoom/pan resets when the pager/column moves past this page.
+    var scale by remember(index) { mutableStateOf(1f) }
+    var offset by remember(index) { mutableStateOf(Offset.Zero) }
+
+    fun applyZoom(newScale: Float, centroid: Offset, pan: Offset) {
+        val coerced = newScale.coerceIn(1f, 5f)
+        offset = if (coerced <= 1f) Offset.Zero else zoomOffset(offset, scale, coerced, centroid, pan)
+        scale = coerced
+        onZoomChanged(scale > 1.01f)
+    }
+
+    Box(
+        modifier
+            .pointerInput(index) { tapGestures({ scale > 1f }, ::applyZoom) }
+            .pointerInput(index) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    onGesture()
+                    do {
+                        val event = awaitPointerEvent()
+                        if (event.changes.size >= 2 || scale > 1f) {
+                            val zoomChange = event.calculateZoom()
+                            val panChange = event.calculatePan()
+                            val centroid = event.calculateCentroid()
+                            if (zoomChange != 1f || panChange != Offset.Zero) {
+                                applyZoom(scale * zoomChange, centroid, panChange)
+                                event.changes.forEach { if (it.positionChanged()) it.consume() }
+                            }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            },
+    ) {
+        AsyncImage(
+            model = MangaPage(pageModel, index),
+            contentDescription = "Page ${index + 1}",
+            contentScale = contentScale,
+            modifier = Modifier.fillMaxSize().graphicsLayer(
+                scaleX = scale,
+                scaleY = scale,
+                translationX = offset.x,
+                translationY = offset.y,
+                transformOrigin = ZoomPivot,
+            ),
+        )
+    }
+}
+
 @Composable
 private fun ReaderPage(
     pageModel: String,
@@ -548,68 +634,56 @@ private fun ReaderPage(
     onZoomChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier.fillMaxSize(),
 ) {
-    // Keyed on `index` so zoom/pan resets when the pager moves to a different page.
-    var scale by remember(index) { mutableStateOf(1f) }
-    var offset by remember(index) { mutableStateOf(Offset.Zero) }
-    var origin by remember(index) { mutableStateOf(TransformOrigin.Center) }
-
-    fun applyScale(newScale: Float) {
-        scale = newScale.coerceIn(1f, 5f)
-        if (scale <= 1f) offset = Offset.Zero
-        onZoomChanged(scale > 1.01f)
-    }
-
-    Box(
-        modifier
-            .pointerInput(isRtl, invertTapZones, isVertical, index) {
-                detectTapGestures(
-                    onDoubleTap = { pos ->
-                        if (scale > 1f) {
-                            origin = TransformOrigin.Center
-                            applyScale(1f)
-                        } else {
-                            origin = TransformOrigin(pos.x / size.width, pos.y / size.height)
-                            applyScale(2.5f)
-                        }
-                    },
-                    onTap = { pos ->
-                        if (scale > 1f) return@detectTapGestures // zoomed: taps pan, not navigate
-                        onZoneTap(computeTapZone(pos, size, isRtl, invertTapZones, isVertical))
-                    },
-                )
-            }
-            // Only takes over for a real pinch (2+ fingers) or panning while already zoomed —
-            // a plain single-finger drag at scale 1 is untouched so it reaches the pager's own
-            // swipe-to-turn-page gesture instead of being consumed here.
-            .pointerInput(index) {
-                awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
-                    do {
-                        val event = awaitPointerEvent()
-                        if (event.changes.size >= 2 || scale > 1f) {
-                            val zoomChange = event.calculateZoom()
-                            val panChange = event.calculatePan()
-                            if (zoomChange != 1f || panChange != Offset.Zero) {
-                                applyScale(scale * zoomChange)
-                                if (scale > 1f) offset += panChange
-                                event.changes.forEach { if (it.positionChanged()) it.consume() }
-                            }
-                        }
-                    } while (event.changes.any { it.pressed })
-                }
+    ZoomableImage(
+        pageModel = pageModel,
+        index = index,
+        contentScale = ContentScale.Fit,
+        onZoomChanged = onZoomChanged,
+        onGesture = {},
+        modifier = modifier,
+    ) { zoomed, applyZoom ->
+        detectTapGestures(
+            onDoubleTap = { pos ->
+                if (zoomed()) applyZoom(1f, pos, Offset.Zero) else applyZoom(2.5f, pos, Offset.Zero)
             },
-    ) {
-        AsyncImage(
-            model = MangaPage(pageModel, index),
-            contentDescription = "Page ${index + 1}",
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize().graphicsLayer(
-                scaleX = scale,
-                scaleY = scale,
-                translationX = offset.x,
-                translationY = offset.y,
-                transformOrigin = origin,
-            ),
+            onTap = { pos ->
+                if (zoomed()) return@detectTapGestures // zoomed: taps pan, not navigate
+                onZoneTap(computeTapZone(pos, size, isRtl, invertTapZones, isVertical))
+            },
+        )
+    }
+}
+
+/** One webtoon page: same pinch/double-tap zoom as [ReaderPage], but a plain tap toggles the
+ * chrome instead of dispatching to a tap zone (PLAN.md §8.1 — no left/right concept scrolling
+ * straight down). [onInteracted] feeds [ContinuousReader]'s "has the user actually touched this
+ * reader" gate for its scroll-to-end auto-navigate. */
+@Composable
+private fun WebtoonPage(
+    pageModel: String,
+    index: Int,
+    aspectRatio: Float,
+    onInteracted: () -> Unit,
+    onZoomChanged: (Boolean) -> Unit,
+    onTap: () -> Unit,
+) {
+    ZoomableImage(
+        pageModel = pageModel,
+        index = index,
+        contentScale = ContentScale.FillWidth,
+        onZoomChanged = onZoomChanged,
+        onGesture = onInteracted,
+        modifier = Modifier.fillMaxWidth().aspectRatio(aspectRatio),
+    ) { zoomed, applyZoom ->
+        detectTapGestures(
+            onDoubleTap = { pos ->
+                onInteracted()
+                if (zoomed()) applyZoom(1f, pos, Offset.Zero) else applyZoom(2.5f, pos, Offset.Zero)
+            },
+            onTap = {
+                onInteracted()
+                if (!zoomed()) onTap()
+            },
         )
     }
 }

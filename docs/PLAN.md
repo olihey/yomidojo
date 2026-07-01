@@ -318,7 +318,9 @@ preview slot, pinch-zoom, and tap zones; `VERTICAL_PAGED` reuses the *exact same
 lambda through a `VerticalPager` instead (top/bottom tap zones, no RTL concept). Both live in
 `PagedReader`. `VERTICAL_CONTINUOUS` (webtoon) is a separate, deliberately simpler
 `ContinuousReader`: a plain `LazyColumn` of full-width images, single-tap-anywhere toggles the
-chrome, no pinch-zoom yet — designed-for, not built. It does share the next-chapter transition:
+chrome, and each page shares the same pinch/double-tap zoom as the paged modes (`ZoomableImage`,
+below) — zooming disables the column's own scroll (`userScrollEnabled`) so a pan on a zoomed
+image doesn't also scroll the list. It does share the next-chapter transition:
 scrolling past the last page reaches a `NextChapterPreview` list item sized to exactly one
 viewport (`fillParentMaxSize`), so scrolling it fully into view is simultaneously hitting the
 end of the scrollable range (`!listState.canScrollForward`) — that's the trigger, playing the
@@ -348,7 +350,13 @@ when pages merely display:
   (`ReaderPreferences.volumeKeyPaging`, checked live in `MainActivity.dispatchKeyEvent` — it
   used to be stored but never actually read, a real bug fixed alongside this).
 - **Keep-screen-on while reading.**
-- **Double-tap to zoom** (toggle fit ↔ zoomed at the tap point); pinch-zoom/pan too.
+- **Double-tap to zoom** (toggle fit ↔ zoomed at the tap point); pinch-zoom/pan too, in both the
+  paged modes and webtoon, sharing one `ZoomableImage` composable + a `zoomOffset` pivot formula
+  (`ReaderScreen.kt`). The pivot is always wherever the gesture actually is (the pinch centroid,
+  or the double-tap point) — not a fixed `transformOrigin` that only moved on double-tap, which
+  was a real bug: pinching zoomed around the screen's center regardless of where the fingers
+  were. `zoomOffset` instead keeps `transformOrigin` pinned at the content's top-left and solves
+  for the translation that keeps the point under the gesture visually still as scale changes.
 - **One-time gesture-help overlay** on first open of the reader, dismissible.
 - **Immersive mode tied to the chrome overlay.** System status/navigation bars follow the same
   `showChrome` state as the series/chapter info + progress bar (`ImmersiveMode(enabled =
