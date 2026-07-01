@@ -48,8 +48,9 @@ private fun ReaderHost(graph: AppGraph, seriesId: String, chapterId: String, onB
     val chapter = chapters.find { it.id == chapterId } ?: return
 
     val rtl = series?.readingDirection != ReadingDirection.LTR
-    val viewModel = remember(chapter.id) {
-        ReaderViewModel(graph.repository, graph.source, chapter, rtl, graph.readerPreferences)
+    val title = series?.title ?: ""
+    val viewModel = remember(chapter.id, rtl, title) {
+        ReaderViewModel(graph.repository, graph.source, chapter, rtl, title, graph.readerPreferences)
     }
     ReaderScreen(viewModel, onBack)
 }

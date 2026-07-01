@@ -47,6 +47,7 @@ class ReaderViewModel(
     source: MangaSource,
     val chapter: ChapterCard,
     val readingDirectionRtl: Boolean,
+    val seriesTitle: String,
     private val prefs: ReaderPreferences,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
