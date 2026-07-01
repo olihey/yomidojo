@@ -7,6 +7,8 @@ import com.mangaread.core.domain.nowEpochMillis
 import com.mangaread.core.scanner.LibraryScanner
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /** Same ordering `selectLibrary` uses to pick a series' cover chapter (nulls last). */
 private val seriesCoverOrder = compareBy<Chapter>(
@@ -52,15 +54,28 @@ class LibrarySyncer(
     /**
      * Generates/caches the covers [sync] deferred — every chapter except each series' own cover
      * chapter. Meant to run after [sync] returns (e.g. fired off in the background) so it never
-     * delays the library appearing; safe to call even with nothing pending.
+     * delays the library appearing; safe to call even with nothing pending. [onProgress] is
+     * (done, total) so the UI can show that background work is still happening.
      */
-    suspend fun backfillChapterCovers() {
+    suspend fun backfillChapterCovers(onProgress: (Int, Int) -> Unit = { _, _ -> }) {
         val cache = coverCache ?: return
         if (deferred.isEmpty()) return
         val pending = deferred.toList()
         deferred.clear()
+        val total = pending.size
+        var done = 0
+        val doneLock = Mutex()
+        onProgress(0, total)
         coroutineScope {
-            pending.map { chapter -> async { generateOne(cache, chapter) } }.forEach { it.await() }
+            pending.map { chapter ->
+                async {
+                    generateOne(cache, chapter)
+                    doneLock.withLock {
+                        done++
+                        onProgress(done, total)
+                    }
+                }
+            }.forEach { it.await() }
         }
     }
 

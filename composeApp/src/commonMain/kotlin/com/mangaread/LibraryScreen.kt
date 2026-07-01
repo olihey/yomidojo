@@ -66,6 +66,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPickFolder: () -> Unit, onSerie
     val viewMode by viewModel.viewMode.collectAsState()
     val selectionMode by viewModel.selectionMode.collectAsState()
     val selectedIds by viewModel.selectedIds.collectAsState()
+    val backfillProgress by viewModel.backfillProgress.collectAsState()
 
     Scaffold(
         topBar = {
@@ -102,6 +103,7 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPickFolder: () -> Unit, onSerie
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            if (progress == null && backfillProgress != null) CoverBackfillBanner(backfillProgress!!)
             if (needsReGrant) ReGrantBanner(onPickFolder)
             if (cards.isEmpty() && progress == null && query.isBlank() && !needsReGrant) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -145,6 +147,24 @@ private fun SelectionTopBar(
             TextButton(onClick = onDone) { Text("Done") }
         },
     )
+}
+
+/** Chapter covers deferred by the last scan are generating quietly (PLAN.md §9) — not blocking, just visible. */
+@Composable
+private fun CoverBackfillBanner(progress: CoverBackfillProgress) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            Text(
+                "Generating chapter covers… ${progress.done}/${progress.total}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
 }
 
 @Composable
