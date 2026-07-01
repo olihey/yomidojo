@@ -236,6 +236,8 @@ private fun BoxScope.ReaderChrome(
                     dragValue = null
                 },
                 valueRange = 0f..(pageCount - 1).toFloat(),
+                // One discrete stop per page, rather than a free-scrubbing continuous drag.
+                steps = (pageCount - 2).coerceAtLeast(0),
                 colors = SliderDefaults.colors(
                     thumbColor = Color.White,
                     activeTrackColor = Color.White,
