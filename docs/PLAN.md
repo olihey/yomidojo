@@ -636,8 +636,12 @@ tap zones, double-tap zoom, keep-screen-on, volume-key paging, one-time gesture-
 double-page spread pairing (aspect-ratio heuristic via `PageProvider.pageSize`, paired only on
 wide/landscape containers), §7.5 selection mode + bulk read/unread on both the library
 (long-press a series) and series screen (long-press a chapter, or tap a volume header to select
-the whole volume), a real Settings screen, and a chrome quick-switcher for live, per-series
-reading-mode changes (§8) are all in and verified on-device.
+the whole volume), a real Settings screen, a chrome quick-switcher for live, per-series
+reading-mode changes (§8), and an app-wide theme setting (Light/Dark/Follow system, via
+`AppPreferences.themeMode` — a reactive `StateFlow` rather than a plain settings-backed property
+like the other prefs classes, since `App()` wraps the whole nav host in `MaterialTheme` above
+where `SettingsScreen` lives and needs the change to propagate back up live, not just on next
+launch) are all in and verified on-device.
 
 **"Recently added chapters" feed** = a library filter/section backed by the
 `chapter.date_added` query, surfaced in Phase 1 (no dedicated screen, no upstream polling).

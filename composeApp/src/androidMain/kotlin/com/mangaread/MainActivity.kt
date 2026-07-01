@@ -65,7 +65,10 @@ class MainActivity : ComponentActivity() {
         readerPrefs = ReaderPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
-        val graph = AppGraph(repository, source, viewModel, readerPrefs)
+        val appPrefs = AppPreferences(
+            SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
+        )
+        val graph = AppGraph(repository, source, viewModel, readerPrefs, appPrefs)
 
         pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {

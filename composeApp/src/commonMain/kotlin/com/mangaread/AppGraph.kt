@@ -9,4 +9,5 @@ class AppGraph(
     val source: MangaSource,
     val libraryViewModel: LibraryViewModel,
     val readerPreferences: ReaderPreferences,
+    val appPreferences: AppPreferences,
 )

@@ -16,6 +16,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,6 +25,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mangaread.core.domain.ReadingMode
+
+fun ThemeMode.label(): String = when (this) {
+    ThemeMode.LIGHT -> "Light"
+    ThemeMode.DARK -> "Dark"
+    ThemeMode.SYSTEM -> "Follow system setting"
+}
 
 /** Shared with the reader's chrome quick-switcher, so both use identical wording. */
 fun ReadingMode.label(): String = when (this) {
@@ -44,10 +51,11 @@ fun ReadingMode.shortLabel(): String = when (this) {
 /** Reader settings (PLAN.md §8.1): default reading mode, tap-zone layout, volume-key paging. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(prefs: ReaderPreferences, onBack: () -> Unit) {
+fun SettingsScreen(prefs: ReaderPreferences, appPreferences: AppPreferences, onBack: () -> Unit) {
     var readingMode by remember { mutableStateOf(prefs.defaultReadingMode) }
     var invertTapZones by remember { mutableStateOf(prefs.invertTapZones) }
     var volumeKeyPaging by remember { mutableStateOf(prefs.volumeKeyPaging) }
+    val themeMode by appPreferences.themeMode.collectAsState()
 
     Scaffold(
         topBar = {
@@ -60,6 +68,26 @@ fun SettingsScreen(prefs: ReaderPreferences, onBack: () -> Unit) {
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxWidth()) {
+            Text(
+                "Theme",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp),
+            )
+            ThemeMode.entries.forEach { mode ->
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable { appPreferences.setThemeMode(mode) }
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    RadioButton(selected = mode == themeMode, onClick = { appPreferences.setThemeMode(mode) })
+                    Text(mode.label())
+                }
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
             Text(
                 "Default reading mode",
                 style = MaterialTheme.typography.titleSmall,

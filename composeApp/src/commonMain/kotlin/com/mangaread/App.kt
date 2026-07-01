@@ -1,6 +1,9 @@
 package com.mangaread
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -13,7 +16,13 @@ import androidx.navigation.compose.rememberNavController
 @Composable
 fun App(graph: AppGraph, onPickFolder: () -> Unit) {
     val navController = rememberNavController()
-    MaterialTheme {
+    val themeMode by graph.appPreferences.themeMode.collectAsState()
+    val darkTheme = when (themeMode) {
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    }
+    MaterialTheme(colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()) {
         NavHost(navController = navController, startDestination = "library") {
             composable("library") {
                 LibraryScreen(
@@ -26,6 +35,7 @@ fun App(graph: AppGraph, onPickFolder: () -> Unit) {
             composable("settings") {
                 SettingsScreen(
                     prefs = graph.readerPreferences,
+                    appPreferences = graph.appPreferences,
                     onBack = { navController.popBackStack() },
                 )
             }
