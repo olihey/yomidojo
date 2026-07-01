@@ -325,10 +325,11 @@ when pages merely display:
 - **Keep-screen-on while reading.**
 - **Double-tap to zoom** (toggle fit ↔ zoomed at the tap point); pinch-zoom/pan too.
 - **One-time gesture-help overlay** on first open of the reader, dismissible.
-- **Immersive mode.** System status/navigation bars hide for the whole reader session
-  (`ImmersiveMode`, Android via `WindowInsetsControllerCompat` — restored on leaving the
-  reader). The chrome overlay (series/chapter info, progress bar) shows on entry, auto-hides
-  after 5s, and the center tap zone toggles it independently of the system bars.
+- **Immersive mode tied to the chrome overlay.** System status/navigation bars follow the same
+  `showChrome` state as the series/chapter info + progress bar (`ImmersiveMode(enabled =
+  !showChrome)`, Android via `WindowInsetsControllerCompat` — restored on leaving the reader):
+  both show together on entry and on a center tap, both hide together after the 5s auto-hide or
+  another center tap. They're shown/hidden as one unit, not independently.
 - **Scrubbable progress slider.** The chrome's progress bar is a `Slider`, not just a display —
   dragging it jumps straight to that page (`onValueChangeFinished` → `pagerState.scrollToPage`)
   for fast navigation through a long chapter.

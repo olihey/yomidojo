@@ -81,7 +81,9 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
     }
 
     KeepScreenOn(enabled = true)
-    ImmersiveMode(enabled = true)
+    // The system bars follow the chrome overlay: shown together, hidden together.
+    var showChrome by remember { mutableStateOf(true) }
+    ImmersiveMode(enabled = !showChrome)
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         val pairPortrait = maxWidth > maxHeight
@@ -94,7 +96,6 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
 
         val pagerState = rememberPagerState(initialPage = initialUnit.coerceIn(0, units.size - 1)) { totalCount }
         val scope = rememberCoroutineScope()
-        var showChrome by remember { mutableStateOf(true) }
         var zoomedIn by remember { mutableStateOf(false) }
         val showGestureHelp by viewModel.showGestureHelp.collectAsState()
 
