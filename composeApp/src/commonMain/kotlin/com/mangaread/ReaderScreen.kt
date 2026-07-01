@@ -101,6 +101,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
         val pagerState = rememberPagerState(initialPage = initialUnit.coerceIn(0, units.size - 1)) { totalCount }
         val scope = rememberCoroutineScope()
         var zoomedIn by remember { mutableStateOf(false) }
+        var isScrubbing by remember { mutableStateOf(false) }
         val showGestureHelp by viewModel.showGestureHelp.collectAsState()
 
         LaunchedEffect(pagerState, units) {
@@ -112,9 +113,10 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
         LaunchedEffect(pagerState.currentPage) { zoomedIn = false }
 
         // Auto-hide the chrome 5s after it's shown; re-arms every time it's shown again
-        // (including the initial show on opening the reader).
-        LaunchedEffect(showChrome) {
-            if (showChrome) {
+        // (including the initial show on opening the reader) and pauses entirely while
+        // scrubbing the progress slider, restarting the full 5s once the drag ends.
+        LaunchedEffect(showChrome, isScrubbing) {
+            if (showChrome && !isScrubbing) {
                 delay(5_000)
                 showChrome = false
             }
@@ -188,6 +190,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
                 onSeek = { target ->
                     scope.launch { pagerState.scrollToPage(unitIndexForPage(units, target)) }
                 },
+                onScrubbingChanged = { isScrubbing = it },
             )
         }
         if (showGestureHelp) {
@@ -206,6 +209,7 @@ private fun BoxScope.ReaderChrome(
     pageCount: Int,
     onBack: () -> Unit,
     onSeek: (Int) -> Unit,
+    onScrubbingChanged: (Boolean) -> Unit,
 ) {
     Row(
         Modifier.align(Alignment.TopStart).fillMaxWidth().background(Color.Black.copy(alpha = 0.6f))
@@ -230,10 +234,14 @@ private fun BoxScope.ReaderChrome(
         if (pageCount > 1) {
             Slider(
                 value = dragValue ?: currentPage.toFloat(),
-                onValueChange = { dragValue = it },
+                onValueChange = {
+                    dragValue = it
+                    onScrubbingChanged(true)
+                },
                 onValueChangeFinished = {
                     dragValue?.let { onSeek(it.roundToInt().coerceIn(0, pageCount - 1)) }
                     dragValue = null
+                    onScrubbingChanged(false)
                 },
                 valueRange = 0f..(pageCount - 1).toFloat(),
                 // One discrete stop per page, rather than a free-scrubbing continuous drag.
