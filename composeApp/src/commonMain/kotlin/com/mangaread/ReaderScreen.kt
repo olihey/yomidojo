@@ -70,7 +70,6 @@ import com.mangaread.core.data.ChapterCard
 import com.mangaread.core.domain.ReadingMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -88,10 +87,11 @@ private enum class TapZone { BACKWARD, FORWARD, MENU }
 fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToChapter: (String) -> Unit) {
     val pageCount by viewModel.pageCount.collectAsState()
     val wideFlags by viewModel.wideFlags.collectAsState()
+    val pageAspectRatios by viewModel.pageAspectRatios.collectAsState()
 
     // Wait for both the page count AND every page's aspect ratio before building the pager,
     // so spread pairing (which needs the full picture) never has to reshuffle mid-read.
-    if (pageCount <= 0 || wideFlags.size < pageCount) {
+    if (pageCount <= 0 || wideFlags.size < pageCount || pageAspectRatios.size < pageCount) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
@@ -121,6 +121,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
             ContinuousReader(
                 viewModel = viewModel,
                 pageCount = pageCount,
+                pageAspectRatios = pageAspectRatios,
                 readingMode = readingMode,
                 onReadingModeChange = viewModel::setReadingMode,
                 showChrome = showChrome,
@@ -293,6 +294,7 @@ private fun PagedReader(
 private fun ContinuousReader(
     viewModel: ReaderViewModel,
     pageCount: Int,
+    pageAspectRatios: List<Float>,
     readingMode: ReadingMode,
     onReadingModeChange: (ReadingMode) -> Unit,
     showChrome: Boolean,
@@ -304,6 +306,12 @@ private fun ContinuousReader(
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = viewModel.currentPage.value.coerceIn(0, pageCount - 1))
     val scope = rememberCoroutineScope()
     val nextChapter by viewModel.nextChapter.collectAsState()
+    // Chapters made of many short images (e.g. text-over-image panels) can be shorter overall
+    // than one viewport once every image finishes loading — Compose's LazyColumn then settles
+    // with nothing left to scroll on its own, with zero user input. Without this guard that
+    // passive settling looked identical to "the user scrolled to the end", so short chapters
+    // auto-completed and cascaded into the next one (and the next…) before anyone had read them.
+    var hasInteracted by remember { mutableStateOf(false) }
 
     LaunchedEffect(listState) {
         snapshotFlow { listState.firstVisibleItemIndex }.collect { index ->
@@ -313,15 +321,13 @@ private fun ContinuousReader(
 
     // The next-chapter item is sized to exactly one viewport (fillParentMaxSize), so scrolling
     // it fully into view is simultaneously hitting the end of the scrollable range — no separate
-    // "settle" concept needed like the paged pager's snap points. `drop(1)` skips the state as
-    // observed on arrival (e.g. a chapter already marked read opens already scrolled near its
-    // end) so this only fires on a genuine scroll-driven transition, not the initial position —
-    // otherwise a run of already-read chapters cascades straight through every one of them.
-    LaunchedEffect(listState, pageCount, nextChapter) {
+    // "settle" concept needed like the paged pager's snap points.
+    LaunchedEffect(listState, pageCount, nextChapter, hasInteracted) {
+        if (!hasInteracted) return@LaunchedEffect
         val next = nextChapter ?: return@LaunchedEffect
         snapshotFlow {
             listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index == pageCount && !listState.canScrollForward
-        }.drop(1).first { it }
+        }.first { it }
         onNavigateToChapter(next.id)
     }
 
@@ -329,7 +335,7 @@ private fun ContinuousReader(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().pointerInput(Unit) {
-                detectTapGestures(onTap = { onToggleChrome() })
+                detectTapGestures(onPress = { hasInteracted = true }, onTap = { onToggleChrome() })
             },
         ) {
             items(pageCount, key = { it }) { index ->
@@ -337,7 +343,12 @@ private fun ContinuousReader(
                     model = MangaPage(viewModel.pageModel, index),
                     contentDescription = "Page ${index + 1}",
                     contentScale = ContentScale.FillWidth,
-                    modifier = Modifier.fillMaxWidth(),
+                    // Reserves the image's real height up front instead of measuring it as
+                    // zero/placeholder-sized until Coil decodes the bitmap — otherwise, as each
+                    // of many short images resolved its true (small) height, LazyColumn kept
+                    // remeasuring to keep the viewport filled and walked the scroll position
+                    // forward with no user input, landing on the last page on open.
+                    modifier = Modifier.fillMaxWidth().aspectRatio(pageAspectRatios[index]),
                 )
             }
             nextChapter?.let { next ->

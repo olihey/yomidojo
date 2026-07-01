@@ -93,6 +93,15 @@ class ReaderViewModel(
     private val _wideFlags = MutableStateFlow<List<Boolean>>(emptyList())
     val wideFlags: StateFlow<List<Boolean>> = _wideFlags
 
+    /** Width/height per page, so the continuous/webtoon reader can reserve each image's real
+     * height up front (`Modifier.aspectRatio`) instead of measuring it as zero-height until Coil
+     * decodes the bitmap. Without this, a chapter of many short images kept reflowing/remeasuring
+     * as each one loaded, and Compose's LazyColumn — trying to keep the viewport filled through
+     * each of those resizes — walked the scroll position forward past everything already loaded,
+     * landing on the last page (or past it) with no scrolling at all. */
+    private val _pageAspectRatios = MutableStateFlow<List<Float>>(emptyList())
+    val pageAspectRatios: StateFlow<List<Float>> = _pageAspectRatios
+
     val currentPage = MutableStateFlow(chapter.lastPageIndex.coerceAtLeast(0))
 
     /** The chapter right after this one in the series (same order as the series screen), if
@@ -134,10 +143,9 @@ class ReaderViewModel(
             val provider = pageProviderFor(domainChapter, source)
             val count = provider.pageCount
             _pageCount.value = count
-            _wideFlags.value = (0 until count).map { i ->
-                val size = provider.pageSize(i)
-                size.width > size.height
-            }
+            val sizes = (0 until count).map { i -> provider.pageSize(i) }
+            _wideFlags.value = sizes.map { it.width > it.height }
+            _pageAspectRatios.value = sizes.map { it.width.toFloat() / it.height.toFloat() }
             provider.close()
         }
     }
