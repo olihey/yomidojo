@@ -70,6 +70,7 @@ import com.mangaread.core.data.ChapterCard
 import com.mangaread.core.domain.ReadingMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -312,12 +313,15 @@ private fun ContinuousReader(
 
     // The next-chapter item is sized to exactly one viewport (fillParentMaxSize), so scrolling
     // it fully into view is simultaneously hitting the end of the scrollable range — no separate
-    // "settle" concept needed like the paged pager's snap points.
+    // "settle" concept needed like the paged pager's snap points. `drop(1)` skips the state as
+    // observed on arrival (e.g. a chapter already marked read opens already scrolled near its
+    // end) so this only fires on a genuine scroll-driven transition, not the initial position —
+    // otherwise a run of already-read chapters cascades straight through every one of them.
     LaunchedEffect(listState, pageCount, nextChapter) {
         val next = nextChapter ?: return@LaunchedEffect
         snapshotFlow {
             listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index == pageCount && !listState.canScrollForward
-        }.first { it }
+        }.drop(1).first { it }
         onNavigateToChapter(next.id)
     }
 
