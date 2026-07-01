@@ -323,8 +323,12 @@ when pages merely display:
   series, the left zone advances and the right goes back. User-configurable layout.
 - **Volume-key paging (Android).** Hardware volume up/down turn pages; a settings toggle.
 - **Keep-screen-on while reading.**
-- **Double-tap to zoom** (toggle fit ↔ zoomed at the tap point).
+- **Double-tap to zoom** (toggle fit ↔ zoomed at the tap point); pinch-zoom/pan too.
 - **One-time gesture-help overlay** on first open of the reader, dismissible.
+- **Immersive mode.** System status/navigation bars hide for the whole reader session
+  (`ImmersiveMode`, Android via `WindowInsetsControllerCompat` — restored on leaving the
+  reader). The chrome overlay (series/chapter info, progress bar) shows on entry, auto-hides
+  after 5s, and the center tap zone toggles it independently of the system bars.
 
 Tap-zone layout and the volume-key toggle live in settings (multiplatform-settings).
 

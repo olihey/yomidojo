@@ -42,6 +42,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private enum class TapZone { BACKWARD, FORWARD, MENU }
@@ -67,6 +68,7 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit) {
     }
 
     KeepScreenOn(enabled = true)
+    ImmersiveMode(enabled = true)
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
         val pairPortrait = maxWidth > maxHeight
@@ -86,6 +88,15 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit) {
         }
         // A page always starts unzoomed, so leaving it should re-enable pager swiping.
         LaunchedEffect(pagerState.currentPage) { zoomedIn = false }
+
+        // Auto-hide the chrome 5s after it's shown; re-arms every time it's shown again
+        // (including the initial show on opening the reader).
+        LaunchedEffect(showChrome) {
+            if (showChrome) {
+                delay(5_000)
+                showChrome = false
+            }
+        }
 
         DisposableEffect(viewModel.readingDirectionRtl, units.size) {
             VolumeKeyBus.onVolumeKey = { down ->
