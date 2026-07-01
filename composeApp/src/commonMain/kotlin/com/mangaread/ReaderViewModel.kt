@@ -18,6 +18,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+private fun rtlFor(seriesReadingDirection: ReadingDirection?, mode: ReadingMode): Boolean = when (seriesReadingDirection) {
+    ReadingDirection.LTR -> false
+    ReadingDirection.RTL -> true
+    null -> mode != ReadingMode.PAGED_LTR
+}
+
 /** One pager "slot": a single page, or two portrait pages shown side by side (PLAN.md §8). */
 sealed class PageUnit {
     data class Single(val index: Int) : PageUnit()
@@ -58,17 +64,25 @@ class ReaderViewModel(
 ) {
     val pageModel: String = if (chapter.format == "CBZ") "cbz:${chapter.locator}" else "imgdir:${chapter.locator}"
 
-    /** Global default (PLAN.md §8); read once — the ViewModel is recreated per chapter anyway. */
-    val readingMode: ReadingMode = prefs.defaultReadingMode
     val invertTapZones: Boolean = prefs.invertTapZones
-    val isVertical: Boolean = readingMode == ReadingMode.VERTICAL_PAGED || readingMode == ReadingMode.VERTICAL_CONTINUOUS
 
-    /** A series-level override wins; otherwise falls back to the default mode's own direction
-     * (still RTL unless the user's default is explicitly PAGED_LTR — manga defaults to RTL). */
-    val readingDirectionRtl: Boolean = when (seriesReadingDirection) {
-        ReadingDirection.LTR -> false
-        ReadingDirection.RTL -> true
-        null -> readingMode != ReadingMode.PAGED_LTR
+    /** Per-series override (the chrome's quick-switcher) wins; otherwise the global default from
+     * Settings. Mutable — this is exactly what lets the mode change while looking at pages. */
+    private val _readingMode = MutableStateFlow(prefs.readingModeFor(chapter.seriesId) ?: prefs.defaultReadingMode)
+    val readingMode: StateFlow<ReadingMode> = _readingMode
+
+    /** A series' `reading_direction` column wins for paged modes; otherwise falls back to the
+     * current mode's own direction (still RTL unless explicitly PAGED_LTR — manga defaults RTL).
+     * Reactive because [readingMode] can change live via [setReadingMode]. */
+    val readingDirectionRtl: StateFlow<Boolean> = _readingMode
+        .map { mode -> rtlFor(seriesReadingDirection, mode) }
+        .stateIn(scope, SharingStarted.WhileSubscribed(5_000), rtlFor(seriesReadingDirection, _readingMode.value))
+
+    /** Changes the mode for the rest of this reading session and remembers it for this series
+     * specifically (PLAN.md §8: "global default + per-series override"), not the global default. */
+    fun setReadingMode(mode: ReadingMode) {
+        _readingMode.value = mode
+        prefs.setReadingModeFor(chapter.seriesId, mode)
     }
 
     private val _pageCount = MutableStateFlow(chapter.pageCount ?: 0)

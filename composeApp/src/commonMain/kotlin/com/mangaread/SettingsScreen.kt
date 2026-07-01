@@ -25,11 +25,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mangaread.core.domain.ReadingMode
 
-private fun ReadingMode.label(): String = when (this) {
+/** Shared with the reader's chrome quick-switcher, so both use identical wording. */
+fun ReadingMode.label(): String = when (this) {
     ReadingMode.PAGED_LTR -> "Paged, left to right"
     ReadingMode.PAGED_RTL -> "Paged, right to left (manga default)"
     ReadingMode.VERTICAL_PAGED -> "Vertical, one page at a time"
     ReadingMode.VERTICAL_CONTINUOUS -> "Vertical, continuous scroll (webtoon)"
+}
+
+/** Compact form for the chrome's quick-switcher button, where space is tight. */
+fun ReadingMode.shortLabel(): String = when (this) {
+    ReadingMode.PAGED_LTR -> "Paged →"
+    ReadingMode.PAGED_RTL -> "Paged ←"
+    ReadingMode.VERTICAL_PAGED -> "Vertical ↕"
+    ReadingMode.VERTICAL_CONTINUOUS -> "Webtoon ↕"
 }
 
 /** Reader settings (PLAN.md §8.1): default reading mode, tap-zone layout, volume-key paging. */
@@ -57,7 +66,8 @@ fun SettingsScreen(prefs: ReaderPreferences, onBack: () -> Unit) {
                 modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp),
             )
             Text(
-                "A series can still override left-to-right/right-to-left individually.",
+                "Used for any series you haven't switched individually — the reader's chrome " +
+                    "has a quick-switcher that remembers your choice per series.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp),

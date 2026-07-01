@@ -303,10 +303,16 @@ fun pageProviderFor(c: Chapter) = when (c.format) { Format.IMAGE_DIR -> ImageDir
 (manga default — wire RTL early), `VERTICAL_PAGED`, `VERTICAL_CONTINUOUS` (webtoon).
 Plus fit modes, pinch-zoom/pan, double-page spread on landscape/tablet.
 
-All four modes are implemented — `ReaderPreferences.defaultReadingMode` (global, set in the new
-Settings screen) picks between them; a series' own `reading_direction` still overrides
-LTR/RTL for the two paged modes specifically (a per-series *mode* override, i.e. forcing one
-series into webtoon while the rest use paged, is not built — only direction). `PAGED_LTR`/
+All four modes are implemented — `ReaderPreferences.defaultReadingMode` (global, set in the
+Settings screen) is the fallback; a quick-switcher on the reader's own chrome overlay
+(`ReadingModeSwitcher` in `ReaderScreen.kt`, next to the series/chapter title) lets the mode be
+changed live while looking at the pages, and that choice is remembered **per series**
+(`ReaderPreferences.readingModeFor`/`setReadingModeFor`, keyed `reader.seriesReadingMode.$seriesId`
+in the existing settings key-value store — deliberately not a `series` table column, to avoid a
+schema migration for a pure preference with no relational need). `ReaderViewModel.readingMode` is
+a `StateFlow` so switching mid-chapter recomposes immediately. A series' own `reading_direction`
+still overrides LTR/RTL for the two paged modes specifically, layered underneath whichever mode
+is active. `PAGED_LTR`/
 `PAGED_RTL` share one `HorizontalPager` implementation with spread pairing, the next-chapter
 preview slot, pinch-zoom, and tap zones; `VERTICAL_PAGED` reuses the *exact same* page-content
 lambda through a `VerticalPager` instead (top/bottom tap zones, no RTL concept). Both live in
@@ -622,9 +628,10 @@ UI smoke tests (Compose) come later and stay thin; the logic tests above carry t
 resume via `reading_progress`), recently-read library sort, the §8.1 gesture bundle (RTL-aware
 tap zones, double-tap zoom, keep-screen-on, volume-key paging, one-time gesture-help overlay),
 double-page spread pairing (aspect-ratio heuristic via `PageProvider.pageSize`, paired only on
-wide/landscape containers), and §7.5 selection mode + bulk read/unread on both the library
+wide/landscape containers), §7.5 selection mode + bulk read/unread on both the library
 (long-press a series) and series screen (long-press a chapter, or tap a volume header to select
-the whole volume) are all in and verified on-device.
+the whole volume), a real Settings screen, and a chrome quick-switcher for live, per-series
+reading-mode changes (§8) are all in and verified on-device.
 
 **"Recently added chapters" feed** = a library filter/section backed by the
 `chapter.date_added` query, surfaced in Phase 1 (no dedicated screen, no upstream polling).

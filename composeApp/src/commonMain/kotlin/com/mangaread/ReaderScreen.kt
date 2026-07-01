@@ -32,11 +32,14 @@ import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -99,6 +102,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
     ImmersiveMode(enabled = !showChrome)
     var isScrubbing by remember { mutableStateOf(false) }
     val showGestureHelp by viewModel.showGestureHelp.collectAsState()
+    val readingMode by viewModel.readingMode.collectAsState()
+    val readingDirectionRtl by viewModel.readingDirectionRtl.collectAsState()
 
     // Auto-hide only the initial chrome shown on opening the reader — a one-shot timer, not
     // re-armed by later manual toggles (center tap shows/hides it with no timeout after
@@ -110,10 +115,12 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        if (viewModel.readingMode == ReadingMode.VERTICAL_CONTINUOUS) {
+        if (readingMode == ReadingMode.VERTICAL_CONTINUOUS) {
             ContinuousReader(
                 viewModel = viewModel,
                 pageCount = pageCount,
+                readingMode = readingMode,
+                onReadingModeChange = viewModel::setReadingMode,
                 showChrome = showChrome,
                 onShowChromeChange = { showChrome = it },
                 onScrubbingChanged = { isScrubbing = it },
@@ -124,6 +131,8 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
                 viewModel = viewModel,
                 pageCount = pageCount,
                 wideFlags = wideFlags,
+                readingMode = readingMode,
+                readingDirectionRtl = readingDirectionRtl,
                 showChrome = showChrome,
                 onShowChromeChange = { showChrome = it },
                 onScrubbingChanged = { isScrubbing = it },
@@ -133,9 +142,9 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
         }
         if (showGestureHelp) {
             GestureHelpOverlay(
-                isRtl = viewModel.readingDirectionRtl,
+                isRtl = readingDirectionRtl,
                 invertTapZones = viewModel.invertTapZones,
-                isVertical = viewModel.readingMode == ReadingMode.VERTICAL_PAGED,
+                isVertical = readingMode == ReadingMode.VERTICAL_PAGED,
                 onDismiss = viewModel::dismissGestureHelp,
             )
         }
@@ -149,6 +158,8 @@ private fun PagedReader(
     viewModel: ReaderViewModel,
     pageCount: Int,
     wideFlags: List<Boolean>,
+    readingMode: ReadingMode,
+    readingDirectionRtl: Boolean,
     showChrome: Boolean,
     onShowChromeChange: (Boolean) -> Unit,
     onScrubbingChanged: (Boolean) -> Unit,
@@ -156,7 +167,7 @@ private fun PagedReader(
     onNavigateToChapter: (String) -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val isVertical = viewModel.readingMode == ReadingMode.VERTICAL_PAGED
+        val isVertical = readingMode == ReadingMode.VERTICAL_PAGED
         val pairPortrait = maxWidth > maxHeight
         val units = remember(wideFlags, pairPortrait) { buildPageUnits(pageCount, wideFlags, pairPortrait) }
         val initialUnit = remember(units) { unitIndexForPage(units, viewModel.currentPage.value) }
@@ -186,11 +197,11 @@ private fun PagedReader(
             }
         }
 
-        DisposableEffect(viewModel.readingDirectionRtl, isVertical, units.size) {
+        DisposableEffect(readingDirectionRtl, isVertical, units.size) {
             VolumeKeyBus.onVolumeKey = { down ->
                 // "Down" always turns to the next page in reading order — vertical top-to-bottom
                 // has no reversed direction; horizontal still respects LTR/RTL.
-                val forward = if (isVertical) down else (if (viewModel.readingDirectionRtl) !down else down)
+                val forward = if (isVertical) down else (if (readingDirectionRtl) !down else down)
                 scrollBy(pagerState, scope, if (forward) 1 else -1, units.size)
                 true
             }
@@ -210,17 +221,17 @@ private fun PagedReader(
                 }
                 when (val unit = units[unitIndex]) {
                     is PageUnit.Single -> ReaderPage(
-                        viewModel.pageModel, unit.index, viewModel.readingDirectionRtl, viewModel.invertTapZones,
+                        viewModel.pageModel, unit.index, readingDirectionRtl, viewModel.invertTapZones,
                         isVertical, onZoneTap, onZoomChanged = { zoomedIn = it },
                     )
                     is PageUnit.Spread -> {
-                        val order = if (viewModel.readingDirectionRtl) listOf(unit.second, unit.first) else listOf(unit.first, unit.second)
+                        val order = if (readingDirectionRtl) listOf(unit.second, unit.first) else listOf(unit.first, unit.second)
                         Row(Modifier.fillMaxSize()) {
                             order.forEach { pageIndex ->
                                 ReaderPage(
                                     viewModel.pageModel,
                                     pageIndex,
-                                    viewModel.readingDirectionRtl,
+                                    readingDirectionRtl,
                                     viewModel.invertTapZones,
                                     isVertical,
                                     onZoneTap,
@@ -244,7 +255,7 @@ private fun PagedReader(
         } else {
             HorizontalPager(
                 state = pagerState,
-                reverseLayout = viewModel.readingDirectionRtl,
+                reverseLayout = readingDirectionRtl,
                 userScrollEnabled = !zoomedIn,
                 modifier = Modifier.fillMaxSize(),
                 pageContent = pageContent,
@@ -258,6 +269,8 @@ private fun PagedReader(
                 chapterTitle = viewModel.chapter.displayName,
                 currentPage = rawPage,
                 pageCount = pageCount,
+                readingMode = readingMode,
+                onReadingModeChange = viewModel::setReadingMode,
                 onBack = onBack,
                 onSeek = { target ->
                     scope.launch { pagerState.scrollToPage(unitIndexForPage(units, target)) }
@@ -275,6 +288,8 @@ private fun PagedReader(
 private fun ContinuousReader(
     viewModel: ReaderViewModel,
     pageCount: Int,
+    readingMode: ReadingMode,
+    onReadingModeChange: (ReadingMode) -> Unit,
     showChrome: Boolean,
     onShowChromeChange: (Boolean) -> Unit,
     onScrubbingChanged: (Boolean) -> Unit,
@@ -311,6 +326,8 @@ private fun ContinuousReader(
                 chapterTitle = viewModel.chapter.displayName,
                 currentPage = listState.firstVisibleItemIndex.coerceIn(0, pageCount - 1),
                 pageCount = pageCount,
+                readingMode = readingMode,
+                onReadingModeChange = onReadingModeChange,
                 onBack = onBack,
                 onSeek = { target -> scope.launch { listState.scrollToItem(target.coerceIn(0, pageCount - 1)) } },
                 onScrubbingChanged = onScrubbingChanged,
@@ -327,6 +344,8 @@ private fun BoxScope.ReaderChrome(
     chapterTitle: String,
     currentPage: Int,
     pageCount: Int,
+    readingMode: ReadingMode,
+    onReadingModeChange: (ReadingMode) -> Unit,
     onBack: () -> Unit,
     onSeek: (Int) -> Unit,
     onScrubbingChanged: (Boolean) -> Unit,
@@ -338,12 +357,13 @@ private fun BoxScope.ReaderChrome(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) { Text("←", color = Color.White, style = MaterialTheme.typography.titleLarge) }
-        Column {
+        Column(Modifier.weight(1f)) {
             if (seriesTitle.isNotBlank()) {
                 Text(seriesTitle, color = Color.White, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Text(chapterTitle, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+        ReadingModeSwitcher(current = readingMode, onSelect = onReadingModeChange)
     }
     Column(
         Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color.Black.copy(alpha = 0.6f))
@@ -380,6 +400,30 @@ private fun BoxScope.ReaderChrome(
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(bottom = 6.dp),
         )
+    }
+}
+
+/** Quick-switcher on the reader's chrome: shows the active mode, opens a dropdown of the other
+ * three on tap. Lets the mode change while looking at the pages, without a trip to Settings —
+ * [onSelect] is wired to [ReaderViewModel.setReadingMode], which persists per series. */
+@Composable
+private fun ReadingModeSwitcher(current: ReadingMode, onSelect: (ReadingMode) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { expanded = true }) {
+            Text(current.shortLabel(), color = Color.White, style = MaterialTheme.typography.labelLarge)
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            ReadingMode.entries.forEach { mode ->
+                DropdownMenuItem(
+                    text = { Text(mode.label()) },
+                    onClick = {
+                        onSelect(mode)
+                        expanded = false
+                    },
+                )
+            }
+        }
     }
 }
 
