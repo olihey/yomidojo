@@ -130,6 +130,11 @@ UPDATE chapter SET cover_path = ? WHERE id = ?;
 updateChapterPageCount:
 UPDATE chapter SET page_count = ? WHERE id = ?;
 
+-- Lets a re-scan skip cover generation AND page counting entirely, per chapter, once both are
+-- already known (no re-opening the CBZ/folder at all) — one query per series, not per chapter.
+selectCoverStatesForSeries:
+SELECT id, cover_path, page_count FROM chapter WHERE series_id = ?;
+
 -- Derived unread count drives hide-read and the cover badge (§7).
 unreadCountForSeries:
 SELECT COUNT(*) FROM chapter c

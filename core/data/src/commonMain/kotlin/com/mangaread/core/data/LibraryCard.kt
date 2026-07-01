@@ -35,3 +35,6 @@ data class ChapterCard(
     /** Cached first-page cover if generated, else the scheme-tagged locator fallback (§9). */
     val coverModel: String?,
 )
+
+/** Known scan-time state for one chapter, used to decide whether a re-scan can skip it entirely. */
+data class ChapterCoverState(val coverPath: String?, val pageCount: Int?)
