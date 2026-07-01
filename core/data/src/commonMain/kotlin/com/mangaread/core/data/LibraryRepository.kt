@@ -91,8 +91,18 @@ class LibraryRepository(db: MangaDatabase) {
                         date_added = c.dateAdded,
                     )
                 }
+                // Prune chapters that disappeared from this series on disk.
+                q.deleteChaptersForSeriesNotIn(series.id, chapters.map { it.id })
             }
         }
+
+    /**
+     * Remove series (and, via cascade, their chapters/progress) not touched by the scan that
+     * stamped [scannedAt] as last_scanned. Call ONLY after a scan completes successfully.
+     */
+    suspend fun deleteSeriesNotScannedAt(scannedAt: Long) = withContext(ioDispatcher) {
+        q.deleteSeriesNotScannedAt(scannedAt)
+    }
 
     private fun coverModel(coverPath: String?, format: String?, locator: String?): String? = when {
         coverPath != null -> coverPath          // a real cached cover (Phase 3) wins

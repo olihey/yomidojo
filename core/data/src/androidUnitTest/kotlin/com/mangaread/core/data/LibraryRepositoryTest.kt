@@ -49,6 +49,25 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun rescan_removes_series_and_chapters_no_longer_on_disk() = runTest {
+        val (repo, _) = newRepo()
+        // Scan 1 (t=1): two series.
+        repo.persistSeries(series("a", "A", 1), listOf(chapter("a1", "a", 1.0), chapter("a2", "a", 2.0)))
+        repo.persistSeries(series("b", "B", 1), listOf(chapter("b1", "b", 1.0)))
+        repo.deleteSeriesNotScannedAt(1)
+        assertEquals(2, repo.observeLibrary().first().size)
+
+        // Scan 2 (t=2): B is gone from disk; A lost chapter a2.
+        repo.persistSeries(series("a", "A", 2), listOf(chapter("a1", "a", 1.0)))
+        repo.deleteSeriesNotScannedAt(2)
+
+        val lib = repo.observeLibrary().first()
+        assertEquals(1, lib.size, "B removed (not seen in scan 2)")
+        assertEquals("A", lib[0].title)
+        assertEquals(1, lib[0].chapterCount, "A's stale chapter a2 pruned")
+    }
+
+    @Test
     fun library_counts_unread_from_progress() = runTest {
         val (repo, db) = newRepo()
         repo.persistSeries(series("s1", "X", 1), listOf(chapter("c1", "s1", 1.0), chapter("c2", "s1", 2.0)))

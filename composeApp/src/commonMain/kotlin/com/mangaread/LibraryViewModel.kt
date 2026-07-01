@@ -84,14 +84,17 @@ class LibraryViewModel(
         if (_progress.value != null) return
         var seriesCount = 0
         var chapterCount = 0
+        val scanAt = nowEpochMillis()
         _progress.value = ScanProgress(0, 0)
         try {
-            scanner.scan(rootLocator, nowEpochMillis()).collect { scanned ->
+            scanner.scan(rootLocator, scanAt).collect { scanned ->
                 repository.persistSeries(scanned.series, scanned.chapters)
                 seriesCount++
                 chapterCount += scanned.chapters.size
                 _progress.value = ScanProgress(seriesCount, chapterCount)
             }
+            // Reached only if the scan completed without throwing: safe to prune removed series.
+            repository.deleteSeriesNotScannedAt(scanAt)
         } finally {
             _progress.value = null
         }
