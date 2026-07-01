@@ -59,6 +59,7 @@ import coil3.compose.AsyncImage
 import com.mangaread.core.data.ChapterCard
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -112,14 +113,13 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
         // A page always starts unzoomed, so leaving it should re-enable pager swiping.
         LaunchedEffect(pagerState.currentPage) { zoomedIn = false }
 
-        // Auto-hide the chrome 5s after it's shown; re-arms every time it's shown again
-        // (including the initial show on opening the reader) and pauses entirely while
-        // scrubbing the progress slider, restarting the full 5s once the drag ends.
-        LaunchedEffect(showChrome, isScrubbing) {
-            if (showChrome && !isScrubbing) {
-                delay(5_000)
-                showChrome = false
-            }
+        // Auto-hide only the initial chrome shown on opening the reader — a one-shot timer, not
+        // re-armed by later manual toggles (center tap shows/hides it with no timeout after
+        // that). Waits out an in-progress scrub rather than yanking the slider mid-drag.
+        LaunchedEffect(Unit) {
+            delay(5_000)
+            snapshotFlow { isScrubbing }.first { !it }
+            showChrome = false
         }
 
         // Only fires once the swipe settles ON the preview slot (not just passing through

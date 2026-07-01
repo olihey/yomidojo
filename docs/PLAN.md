@@ -328,8 +328,14 @@ when pages merely display:
 - **Immersive mode tied to the chrome overlay.** System status/navigation bars follow the same
   `showChrome` state as the series/chapter info + progress bar (`ImmersiveMode(enabled =
   !showChrome)`, Android via `WindowInsetsControllerCompat` — restored on leaving the reader):
-  both show together on entry and on a center tap, both hide together after the 5s auto-hide or
-  another center tap. They're shown/hidden as one unit, not independently.
+  both show together on entry and on a center tap, both hide together on the initial auto-hide
+  or another center tap. They're shown/hidden as one unit, not independently.
+- **Auto-hide is a one-shot startup timer, not re-armed by manual toggles.** The chrome/system
+  bars auto-hide 5s after the reader opens; a later center tap that re-shows them has no
+  timeout — it stays until tapped again. `LaunchedEffect(Unit)` (not keyed on `showChrome`), so
+  it only ever fires once per reader session, and it waits out an in-progress slider scrub
+  (`snapshotFlow { isScrubbing }.first { !it }`) before hiding rather than yanking it away
+  mid-drag.
 - **Scrubbable progress slider.** The chrome's progress bar is a `Slider`, not just a display —
   dragging it jumps straight to that page (`onValueChangeFinished` → `pagerState.scrollToPage`)
   for fast navigation through a long chapter.
