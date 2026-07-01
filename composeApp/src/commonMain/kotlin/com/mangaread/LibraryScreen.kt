@@ -191,7 +191,7 @@ private fun LibraryControls(
                 }
             }
             TextButton(onClick = viewModel::toggleDirection) { Text(if (ascending) "↑ Asc" else "↓ Desc") }
-            FilterChip(selected = unreadOnly, onClick = { viewModel.unreadOnly.value = !unreadOnly }, label = { Text("Unread") })
+            FilterChip(selected = unreadOnly, onClick = { viewModel.unreadOnly.value = !unreadOnly }, label = { Text("Hide read") })
         }
     }
 }
