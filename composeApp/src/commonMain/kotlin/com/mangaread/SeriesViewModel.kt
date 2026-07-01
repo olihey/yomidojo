@@ -20,11 +20,11 @@ class SeriesViewModel(
     val series: StateFlow<DomainSeries?> =
         repository.observeSeries(seriesId).stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /** Ascending (Chapter 1 first), grouped by volume in the UI (PLAN.md §7.3). */
+    /** Ascending (Chapter 1 first); volume/number order, flat grid regardless of volume (PLAN.md §7.3). */
     val chapters: StateFlow<List<ChapterCard>> =
         repository.observeChapters(seriesId).stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Multi-select chapters (individually or by volume) for bulk read/unread (PLAN.md §7.5). */
+    /** Multi-select chapters for bulk read/unread (PLAN.md §7.5). */
     val selectionMode = MutableStateFlow(false)
     val selectedIds = MutableStateFlow<Set<String>>(emptySet())
 
@@ -43,15 +43,6 @@ class SeriesViewModel(
 
     fun toggleSelected(chapterId: String) {
         selectedIds.value = if (chapterId in selectedIds.value) selectedIds.value - chapterId else selectedIds.value + chapterId
-        if (selectedIds.value.isEmpty()) selectionMode.value = false
-    }
-
-    /** Tapping a volume header selects/deselects every chapter in that volume. */
-    fun toggleVolumeSelected(volume: Double?) {
-        val ids = chapters.value.filter { it.volume == volume }.map { it.id }.toSet()
-        val allSelected = ids.isNotEmpty() && ids.all { it in selectedIds.value }
-        selectionMode.value = true
-        selectedIds.value = if (allSelected) selectedIds.value - ids else selectedIds.value + ids
         if (selectedIds.value.isEmpty()) selectionMode.value = false
     }
 

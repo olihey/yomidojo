@@ -2,19 +2,16 @@ package com.mangaread
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -95,42 +92,19 @@ fun SeriesScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                chapters.groupBy { it.volume }.toSortedMap(compareBy { it ?: Double.MAX_VALUE }).forEach { (volume, vChapters) ->
-                    if (volume != null) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            VolumeHeader(
-                                volume = volume,
-                                selectionMode = selectionMode,
-                                allSelected = vChapters.all { it.id in selectedIds },
-                                onClick = { viewModel.toggleVolumeSelected(volume) },
-                            )
-                        }
-                    }
-                    items(vChapters, key = { it.id }) { chapter ->
-                        ChapterCell(
-                            chapter = chapter,
-                            selectionMode = selectionMode,
-                            selected = chapter.id in selectedIds,
-                            onClick = { if (selectionMode) viewModel.toggleSelected(chapter.id) else onChapterClick(chapter.id) },
-                            onLongClick = { if (!selectionMode) viewModel.enterSelectionMode(chapter.id) },
-                        )
-                    }
+                // Chapters are already ordered by volume/number (§7.3); no header/grouping, so a
+                // series with volume metadata looks like one continuous grid, same as one without.
+                items(chapters, key = { it.id }) { chapter ->
+                    ChapterCell(
+                        chapter = chapter,
+                        selectionMode = selectionMode,
+                        selected = chapter.id in selectedIds,
+                        onClick = { if (selectionMode) viewModel.toggleSelected(chapter.id) else onChapterClick(chapter.id) },
+                        onLongClick = { if (!selectionMode) viewModel.enterSelectionMode(chapter.id) },
+                    )
                 }
             }
         }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun VolumeHeader(volume: Double, selectionMode: Boolean, allSelected: Boolean, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        if (selectionMode) Checkbox(checked = allSelected, onCheckedChange = { onClick() })
-        Text("Volume ${volume.toInt()}", style = MaterialTheme.typography.titleSmall)
     }
 }
 
