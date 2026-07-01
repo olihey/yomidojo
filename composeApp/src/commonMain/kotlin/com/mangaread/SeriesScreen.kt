@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -36,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.mangaread.core.data.ChapterCard
 
@@ -178,31 +180,47 @@ private fun ChapterCoverPlaceholder(title: String, modifier: Modifier, model: St
 }
 
 /**
- * Unread → nothing; in progress → percentage disc; finished → check disc (PLAN.md §7.2), as a
- * corner overlay on the chapter cover.
+ * Unread → nothing; in progress → a ring filled to the percentage with the number inside;
+ * finished → check disc (PLAN.md §7.2), as a corner overlay on the chapter cover.
  */
 @Composable
 private fun ReadStatusOverlay(chapter: ChapterCard, modifier: Modifier = Modifier) {
+    if (chapter.completed) {
+        Box(
+            modifier
+                .size(22.dp)
+                .clip(RoundedCornerShape(50))
+                .background(MaterialTheme.colorScheme.primary),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("✓", color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall)
+        }
+        return
+    }
+
     val percent = chapter.pageCount?.takeIf { it > 0 }?.let { count ->
         (((chapter.lastPageIndex + 1).coerceAtMost(count)) * 100 / count)
     }
-    val label = when {
-        chapter.completed -> "✓"
-        percent != null && chapter.lastPageIndex > 0 -> "$percent%"
-        else -> null
-    } ?: return
+    if (percent == null || chapter.lastPageIndex <= 0) return
 
     Box(
         modifier
+            .size(28.dp)
             .clip(RoundedCornerShape(50))
-            .background(if (chapter.completed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.scrim.copy(alpha = 0.7f))
-            .padding(horizontal = 5.dp, vertical = 2.dp),
+            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.7f)),
         contentAlignment = Alignment.Center,
     ) {
+        CircularProgressIndicator(
+            progress = { percent / 100f },
+            modifier = Modifier.fillMaxSize().padding(3.dp),
+            strokeWidth = 2.dp,
+            color = androidx.compose.ui.graphics.Color.White,
+            trackColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.3f),
+        )
         Text(
-            label,
-            color = if (chapter.completed) MaterialTheme.colorScheme.onPrimary else androidx.compose.ui.graphics.Color.White,
-            style = MaterialTheme.typography.labelSmall,
+            "$percent",
+            color = androidx.compose.ui.graphics.Color.White,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
         )
     }
 }
