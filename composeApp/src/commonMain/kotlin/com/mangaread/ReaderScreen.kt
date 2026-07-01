@@ -74,6 +74,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private enum class TapZone { BACKWARD, FORWARD, MENU }
@@ -558,6 +559,16 @@ private fun zoomOffset(offset: Offset, oldScale: Float, newScale: Float, centroi
     return offset * ratio + centroid * (1f - ratio) + pan
 }
 
+/** Pinch range: below 1 shrinks the page smaller than "fit" (e.g. to see a whole spread at
+ * once), above 1 is the usual zoom-in-for-detail. */
+private const val MIN_ZOOM = 0.5f
+private const val MAX_ZOOM = 5f
+
+/** Whether [scale] has drifted from the default "fit" size in *either* direction — used to
+ * gate tap-vs-pan dispatch and to disable the pager/column's own scroll while pinched out too,
+ * not just while pinched in. */
+private fun isZoomed(scale: Float) = abs(scale - 1f) > 0.01f
+
 /** Pinch/double-tap zoom shared by [ReaderPage] and [WebtoonPage]: scales/pans an [AsyncImage] in
  * a `graphicsLayer`, pivoting around wherever the gesture actually is via [zoomOffset] rather than
  * always around the screen's center. [onGesture] runs first on every pointer event (pinch or
@@ -573,29 +584,42 @@ private fun ZoomableImage(
     onZoomChanged: (Boolean) -> Unit,
     onGesture: () -> Unit,
     modifier: Modifier,
-    tapGestures: suspend PointerInputScope.(zoomed: () -> Boolean, applyZoom: (Float, Offset, Offset) -> Unit) -> Unit,
+    tapGestures: suspend PointerInputScope.(
+        zoomed: () -> Boolean,
+        applyZoom: (Float, Offset, Offset) -> Unit,
+        resetZoom: () -> Unit,
+    ) -> Unit,
 ) {
     // Keyed on `index` so zoom/pan resets when the pager/column moves past this page.
     var scale by remember(index) { mutableStateOf(1f) }
     var offset by remember(index) { mutableStateOf(Offset.Zero) }
 
+    // Pinching continuously through scale 1 should feel seamless in either direction, so this
+    // never snaps offset back to zero on its own — only an explicit resetZoom() (double-tap)
+    // recenters, since a pinch that happens to land near 1x isn't asking to be recentered.
     fun applyZoom(newScale: Float, centroid: Offset, pan: Offset) {
-        val coerced = newScale.coerceIn(1f, 5f)
-        offset = if (coerced <= 1f) Offset.Zero else zoomOffset(offset, scale, coerced, centroid, pan)
+        val coerced = newScale.coerceIn(MIN_ZOOM, MAX_ZOOM)
+        offset = zoomOffset(offset, scale, coerced, centroid, pan)
         scale = coerced
-        onZoomChanged(scale > 1.01f)
+        onZoomChanged(isZoomed(scale))
+    }
+
+    fun resetZoom() {
+        scale = 1f
+        offset = Offset.Zero
+        onZoomChanged(false)
     }
 
     Box(
         modifier
-            .pointerInput(index) { tapGestures({ scale > 1f }, ::applyZoom) }
+            .pointerInput(index) { tapGestures({ isZoomed(scale) }, ::applyZoom, ::resetZoom) }
             .pointerInput(index) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false)
                     onGesture()
                     do {
                         val event = awaitPointerEvent()
-                        if (event.changes.size >= 2 || scale > 1f) {
+                        if (event.changes.size >= 2 || isZoomed(scale)) {
                             val zoomChange = event.calculateZoom()
                             val panChange = event.calculatePan()
                             val centroid = event.calculateCentroid()
@@ -641,10 +665,10 @@ private fun ReaderPage(
         onZoomChanged = onZoomChanged,
         onGesture = {},
         modifier = modifier,
-    ) { zoomed, applyZoom ->
+    ) { zoomed, applyZoom, resetZoom ->
         detectTapGestures(
             onDoubleTap = { pos ->
-                if (zoomed()) applyZoom(1f, pos, Offset.Zero) else applyZoom(2.5f, pos, Offset.Zero)
+                if (zoomed()) resetZoom() else applyZoom(2.5f, pos, Offset.Zero)
             },
             onTap = { pos ->
                 if (zoomed()) return@detectTapGestures // zoomed: taps pan, not navigate
@@ -674,11 +698,11 @@ private fun WebtoonPage(
         onZoomChanged = onZoomChanged,
         onGesture = onInteracted,
         modifier = Modifier.fillMaxWidth().aspectRatio(aspectRatio),
-    ) { zoomed, applyZoom ->
+    ) { zoomed, applyZoom, resetZoom ->
         detectTapGestures(
             onDoubleTap = { pos ->
                 onInteracted()
-                if (zoomed()) applyZoom(1f, pos, Offset.Zero) else applyZoom(2.5f, pos, Offset.Zero)
+                if (zoomed()) resetZoom() else applyZoom(2.5f, pos, Offset.Zero)
             },
             onTap = {
                 onInteracted()

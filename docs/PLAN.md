@@ -357,6 +357,10 @@ when pages merely display:
   was a real bug: pinching zoomed around the screen's center regardless of where the fingers
   were. `zoomOffset` instead keeps `transformOrigin` pinned at the content's top-left and solves
   for the translation that keeps the point under the gesture visually still as scale changes.
+  Pinch range is `MIN_ZOOM`–`MAX_ZOOM` (0.5×–5×) — zoom-out shrinks below "fit", not just
+  zoom-in; double-tap toggles between "fit" (1×, recentered via an explicit reset — pinching
+  through 1× on the way there does *not* auto-recenter, so it stays smooth in both directions)
+  and a 2.5× preset at the tap point.
 - **One-time gesture-help overlay** on first open of the reader, dismissible.
 - **Immersive mode tied to the chrome overlay.** System status/navigation bars follow the same
   `showChrome` state as the series/chapter info + progress bar (`ImmersiveMode(enabled =
