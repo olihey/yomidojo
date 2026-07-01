@@ -318,9 +318,11 @@ preview slot, pinch-zoom, and tap zones; `VERTICAL_PAGED` reuses the *exact same
 lambda through a `VerticalPager` instead (top/bottom tap zones, no RTL concept). Both live in
 `PagedReader`. `VERTICAL_CONTINUOUS` (webtoon) is a separate, deliberately simpler
 `ContinuousReader`: a plain `LazyColumn` of full-width images, single-tap-anywhere toggles the
-chrome, and each page shares the same pinch/double-tap zoom as the paged modes (`ZoomableImage`,
-below) — zooming disables the column's own scroll (`userScrollEnabled`) so a pan on a zoomed
-image doesn't also scroll the list. It does share the next-chapter transition:
+chrome, and the same pinch/double-tap zoom as the paged modes applies to the *whole column at
+once* (`Zoomable` wraps the `LazyColumn` itself, not each page — zooming only the touched page
+wouldn't be seamless with the rest of the continuous scroll) — zooming in disables the column's
+own scroll (`userScrollEnabled`) so a pan on the zoomed strip doesn't also scroll it. It does
+share the next-chapter transition:
 scrolling past the last page reaches a `NextChapterPreview` list item sized to exactly one
 viewport (`fillParentMaxSize`), so scrolling it fully into view is simultaneously hitting the
 end of the scrollable range (`!listState.canScrollForward`) — that's the trigger, playing the
@@ -351,8 +353,11 @@ when pages merely display:
   used to be stored but never actually read, a real bug fixed alongside this).
 - **Keep-screen-on while reading.**
 - **Double-tap to zoom** (toggle fit ↔ zoomed at the tap point); pinch-zoom/pan too, in both the
-  paged modes and webtoon, sharing one `ZoomableImage` composable + a `zoomOffset` pivot formula
-  (`ReaderScreen.kt`). The pivot is always wherever the gesture actually is (the pinch centroid,
+  paged modes and webtoon, sharing one `Zoomable` composable + a `zoomOffset` pivot formula
+  (`ReaderScreen.kt`) — `Zoomable` is content-agnostic (`content: @Composable (scale, offset) ->
+  Unit`), so `ReaderPage` uses it per-image while `ContinuousReader` wraps its entire `LazyColumn`
+  in one, keeping the webtoon strip zooming as a single seamless unit rather than one page at a
+  time. The pivot is always wherever the gesture actually is (the pinch centroid,
   or the double-tap point) — not a fixed `transformOrigin` that only moved on double-tap, which
   was a real bug: pinching zoomed around the screen's center regardless of where the fingers
   were. `zoomOffset` instead keeps `transformOrigin` pinned at the content's top-left and solves
