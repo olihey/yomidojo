@@ -1,7 +1,8 @@
 package com.mangaread
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -61,28 +63,41 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPickFolder: () -> Unit, onSerie
     val ascending by viewModel.ascending.collectAsState()
     val unreadOnly by viewModel.unreadOnly.collectAsState()
     val viewMode by viewModel.viewMode.collectAsState()
+    val selectionMode by viewModel.selectionMode.collectAsState()
+    val selectedIds by viewModel.selectedIds.collectAsState()
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    if (progress != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            CircularProgressIndicator(Modifier.size(20.dp))
-                            Text("Scanning… ${progress!!.seriesFound} series, ${progress!!.chaptersFound} chapters")
+            if (selectionMode) {
+                SelectionTopBar(
+                    count = selectedIds.size,
+                    onSelectAll = viewModel::selectAll,
+                    onSelectNone = viewModel::selectNone,
+                    onMarkRead = { viewModel.markSelectedRead(true) },
+                    onMarkUnread = { viewModel.markSelectedRead(false) },
+                    onDone = viewModel::exitSelectionMode,
+                )
+            } else {
+                TopAppBar(
+                    title = {
+                        if (progress != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                CircularProgressIndicator(Modifier.size(20.dp))
+                                Text("Scanning… ${progress!!.seriesFound} series, ${progress!!.chaptersFound} chapters")
+                            }
+                        } else {
+                            Text("Library (${cards.size})")
                         }
-                    } else {
-                        Text("Library (${cards.size})")
-                    }
-                },
-                actions = {
-                    TextButton(onClick = viewModel::cycleViewMode) { Text(viewMode.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                    if (canRescan && progress == null) TextButton(onClick = viewModel::rescan) { Text("Re-scan") }
-                },
-            )
+                    },
+                    actions = {
+                        TextButton(onClick = viewModel::cycleViewMode) { Text(viewMode.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                        if (canRescan && progress == null) TextButton(onClick = viewModel::rescan) { Text("Re-scan") }
+                    },
+                )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onPickFolder) { Text("+", Modifier.padding(4.dp)) }
+            if (!selectionMode) FloatingActionButton(onClick = onPickFolder) { Text("+", Modifier.padding(4.dp)) }
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
@@ -92,15 +107,43 @@ fun LibraryScreen(viewModel: LibraryViewModel, onPickFolder: () -> Unit, onSerie
                     Text("No series yet — tap + to pick your manga folder.", Modifier.padding(24.dp))
                 }
             } else {
-                LibraryControls(viewModel, query, sort, ascending, unreadOnly)
+                if (!selectionMode) LibraryControls(viewModel, query, sort, ascending, unreadOnly)
+                val onClick: (String) -> Unit = { id ->
+                    if (selectionMode) viewModel.toggleSelected(id) else onSeriesClick(id)
+                }
+                val onLongClick: (String) -> Unit = { id ->
+                    if (!selectionMode) viewModel.enterSelectionMode(id)
+                }
                 when (viewMode) {
-                    ViewMode.LIST -> ListLayout(cards, onSeriesClick)
-                    ViewMode.GRID -> GridLayout(cards, onSeriesClick)
-                    ViewMode.DETAILED -> DetailedLayout(cards, onSeriesClick)
+                    ViewMode.LIST -> ListLayout(cards, selectionMode, selectedIds, onClick, onLongClick)
+                    ViewMode.GRID -> GridLayout(cards, selectionMode, selectedIds, onClick, onLongClick)
+                    ViewMode.DETAILED -> DetailedLayout(cards, selectionMode, selectedIds, onClick, onLongClick)
                 }
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionTopBar(
+    count: Int,
+    onSelectAll: () -> Unit,
+    onSelectNone: () -> Unit,
+    onMarkRead: () -> Unit,
+    onMarkUnread: () -> Unit,
+    onDone: () -> Unit,
+) {
+    TopAppBar(
+        title = { Text("$count selected") },
+        actions = {
+            TextButton(onClick = onSelectAll) { Text("All") }
+            TextButton(onClick = onSelectNone) { Text("None") }
+            TextButton(onClick = onMarkRead) { Text("Read") }
+            TextButton(onClick = onMarkUnread) { Text("Unread") }
+            TextButton(onClick = onDone) { Text("Done") }
+        },
+    )
 }
 
 @Composable
@@ -152,30 +195,57 @@ private fun LibraryControls(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ListLayout(cards: List<LibraryCard>, onSeriesClick: (String) -> Unit) {
+private fun ListLayout(
+    cards: List<LibraryCard>,
+    selectionMode: Boolean,
+    selectedIds: Set<String>,
+    onClick: (String) -> Unit,
+    onLongClick: (String) -> Unit,
+) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(cards, key = { it.id }) { c ->
             ListItem(
-                modifier = Modifier.clickable { onSeriesClick(c.id) },
+                modifier = Modifier.combinedClickable(onClick = { onClick(c.id) }, onLongClick = { onLongClick(c.id) }),
                 headlineContent = { Text(c.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 supportingContent = { Text("${c.chapterCount} chapters · ${c.unreadCount} unread") },
-                leadingContent = { CoverPlaceholder(c.title, Modifier.size(40.dp, 56.dp), c.coverModel) },
+                leadingContent = {
+                    if (selectionMode) {
+                        Checkbox(checked = c.id in selectedIds, onCheckedChange = { onClick(c.id) })
+                    } else {
+                        CoverPlaceholder(c.title, Modifier.size(40.dp, 56.dp), c.coverModel)
+                    }
+                },
             )
             HorizontalDivider()
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun DetailedLayout(cards: List<LibraryCard>, onSeriesClick: (String) -> Unit) {
+private fun DetailedLayout(
+    cards: List<LibraryCard>,
+    selectionMode: Boolean,
+    selectedIds: Set<String>,
+    onClick: (String) -> Unit,
+    onLongClick: (String) -> Unit,
+) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(cards, key = { it.id }) { c ->
             Row(
-                Modifier.fillMaxWidth().clickable { onSeriesClick(c.id) }.padding(12.dp),
+                Modifier.fillMaxWidth()
+                    .combinedClickable(onClick = { onClick(c.id) }, onLongClick = { onLongClick(c.id) })
+                    .padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                CoverPlaceholder(c.title, Modifier.size(64.dp, 90.dp), c.coverModel)
+                if (selectionMode) {
+                    Checkbox(checked = c.id in selectedIds, onCheckedChange = { onClick(c.id) })
+                } else {
+                    CoverPlaceholder(c.title, Modifier.size(64.dp, 90.dp), c.coverModel)
+                }
                 Column {
                     Text(c.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     c.author?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -187,8 +257,15 @@ private fun DetailedLayout(cards: List<LibraryCard>, onSeriesClick: (String) -> 
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GridLayout(cards: List<LibraryCard>, onSeriesClick: (String) -> Unit) {
+private fun GridLayout(
+    cards: List<LibraryCard>,
+    selectionMode: Boolean,
+    selectedIds: Set<String>,
+    onClick: (String) -> Unit,
+    onLongClick: (String) -> Unit,
+) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(165.dp),
         modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
@@ -196,8 +273,17 @@ private fun GridLayout(cards: List<LibraryCard>, onSeriesClick: (String) -> Unit
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         gridItems(cards, key = { it.id }) { c ->
-            Column(Modifier.clickable { onSeriesClick(c.id) }) {
-                CoverPlaceholder(c.title, Modifier.fillMaxWidth().aspectRatio(0.7f), c.coverModel)
+            Column(Modifier.combinedClickable(onClick = { onClick(c.id) }, onLongClick = { onLongClick(c.id) })) {
+                Box {
+                    CoverPlaceholder(c.title, Modifier.fillMaxWidth().aspectRatio(0.7f), c.coverModel)
+                    if (selectionMode) {
+                        Checkbox(
+                            checked = c.id in selectedIds,
+                            onCheckedChange = { onClick(c.id) },
+                            modifier = Modifier.align(Alignment.TopEnd),
+                        )
+                    }
+                }
                 Text(c.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }

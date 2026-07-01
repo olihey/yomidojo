@@ -44,6 +44,10 @@ class LibraryViewModel(
     val unreadOnly = MutableStateFlow(prefs.unreadOnly)
     val viewMode = MutableStateFlow(prefs.viewMode)
 
+    /** Multi-select series for bulk mark read/unread (PLAN.md §7.5). */
+    val selectionMode = MutableStateFlow(false)
+    val selectedIds = MutableStateFlow<Set<String>>(emptySet())
+
     private val allCards: StateFlow<List<LibraryCard>> =
         repository.observeLibrary().stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
@@ -88,6 +92,32 @@ class LibraryViewModel(
     fun toggleDirection() { ascending.value = !ascending.value }
     fun cycleViewMode() {
         viewMode.value = ViewMode.entries[(viewMode.value.ordinal + 1) % ViewMode.entries.size]
+    }
+
+    fun enterSelectionMode(seriesId: String) {
+        selectionMode.value = true
+        selectedIds.value = setOf(seriesId)
+    }
+
+    fun toggleSelected(seriesId: String) {
+        selectedIds.value = if (seriesId in selectedIds.value) selectedIds.value - seriesId else selectedIds.value + seriesId
+        if (selectedIds.value.isEmpty()) selectionMode.value = false
+    }
+
+    fun selectAll() { selectedIds.value = cards.value.map { it.id }.toSet() }
+    fun selectNone() { selectedIds.value = emptySet() }
+
+    fun exitSelectionMode() {
+        selectionMode.value = false
+        selectedIds.value = emptySet()
+    }
+
+    fun markSelectedRead(completed: Boolean) {
+        val ids = selectedIds.value.toList()
+        scope.launch {
+            repository.markSeriesProgress(ids, completed)
+            exitSelectionMode()
+        }
     }
 
     private suspend fun runScan(rootLocator: String) {

@@ -524,20 +524,21 @@ UI smoke tests (Compose) come later and stay thin; the logic tests above carry t
 |---|---|---|
 | **0 — Scaffold** | Multi-module, DI, SQLDelight (driver + schema), nav/theme, **settings store wiring (multiplatform-settings) + `ioDispatcher` (§13)**; walking skeleton. **Android target only; iOS `actual` stubs kept compiling-on-paper (§12)** | One folder → one series → reader page 1, **on Android** |
 | **1 — Local library** | `LocalFileSource` (SAF/bookmarks) + scanner + parser (vol/ch) + DB; **background scan scheduling (Android WorkManager; iOS manual-only)**; library w/ search, sorts, direction toggle, hide-read, view modes; **recently-added chapters feed** | Scan → series/chapters persist, reconcile, reactive; **parser test corpus passes (§14)** |
-| **2 — Reader + series** | `PageProvider` (incl. `pageSize`/spread detection §8), 4 reading modes, **gesture/polish bundle (§8.1)**, progress; series chapter/volume screen; cover badge; **selection mode + bulk read/unread (§7.5)**; **recently-read sort** | Read image + CBZ; resume; bulk-mark; tap zones + volume keys work — **mostly done, see below** |
+| **2 — Reader + series** | `PageProvider` (incl. `pageSize`/spread detection §8), 4 reading modes, **gesture/polish bundle (§8.1)**, progress; series chapter/volume screen; cover badge; **selection mode + bulk read/unread (§7.5)**; **recently-read sort** | Read image + CBZ; resume; bulk-mark; tap zones + volume keys work — **done** |
 | **3 — Metadata** | AniList enrichment + matching + **rate-limited enrichment pipeline (§9.2)** + **Fix metadata re-search (§9.1)** + cover caching (app-internal, §9) | Real covers/descriptions; re-match fixes wrong matches; release-start sort live |
 | **4 — Cloud source** | Add OneDrive to *validate the abstraction* + the caching/range shim (incl. CBZ local-temp for non-random-access, §11); responsive + settings polish | A cloud source works without changing scanner/reader |
 | **5 — Read-status sync** | `SyncBackend` over the user's cloud; device-independent keys; LWW merge | Progress/read-state converge across two devices |
 
 *PDF slots in after Phase 2 whenever wanted (§15 → see §16); it blocks nothing.*
 
-**Phase 2 status:** `ImageDirPageProvider`/`CbzPageProvider` (Android), series screen (chapters
-grouped by volume, Continue action, per-chapter read toggle), reader screen (RTL-aware
-`HorizontalPager`, resume via `reading_progress`), recently-read library sort, and the §8.1
-gesture bundle (RTL-aware tap zones, double-tap zoom, keep-screen-on, volume-key paging,
-one-time gesture-help overlay) are all in and verified on-device. **Still open:** double-page
-spread pairing (only the aspect-ratio `pageSize` plumbing exists so far, no pairing UI) and
-§7.5 selection mode / bulk read-unread (single-chapter toggle works; no multi-select yet).
+**Phase 2 status: done.** `ImageDirPageProvider`/`CbzPageProvider` (Android), series screen
+(chapters grouped by volume, Continue action), reader screen (RTL-aware `HorizontalPager`,
+resume via `reading_progress`), recently-read library sort, the §8.1 gesture bundle (RTL-aware
+tap zones, double-tap zoom, keep-screen-on, volume-key paging, one-time gesture-help overlay),
+double-page spread pairing (aspect-ratio heuristic via `PageProvider.pageSize`, paired only on
+wide/landscape containers), and §7.5 selection mode + bulk read/unread on both the library
+(long-press a series) and series screen (long-press a chapter, or tap a volume header to select
+the whole volume) are all in and verified on-device.
 
 **"Recently added chapters" feed** = a library filter/section backed by the
 `chapter.date_added` query, surfaced in Phase 1 (no dedicated screen, no upstream polling).

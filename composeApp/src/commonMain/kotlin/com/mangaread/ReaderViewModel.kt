@@ -13,9 +13,35 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+/** One pager "slot": a single page, or two portrait pages shown side by side (PLAN.md §8). */
+sealed class PageUnit {
+    data class Single(val index: Int) : PageUnit()
+    data class Spread(val first: Int, val second: Int) : PageUnit()
+}
+
+/**
+ * Groups raw pages into pager units using the aspect-ratio heuristic (PLAN.md §8): a page
+ * wider than tall is a pre-stitched spread shown alone; consecutive portrait pages pair up
+ * only when [pairPortrait] (landscape/tablet). Pure and side-effect free.
+ */
+fun buildPageUnits(pageCount: Int, wideFlags: List<Boolean>, pairPortrait: Boolean): List<PageUnit> {
+    if (!pairPortrait || wideFlags.size < pageCount) return (0 until pageCount).map { PageUnit.Single(it) }
+    val units = mutableListOf<PageUnit>()
+    var i = 0
+    while (i < pageCount) {
+        val isWide = wideFlags[i]
+        when {
+            isWide -> { units += PageUnit.Single(i); i += 1 }
+            i + 1 < pageCount && !wideFlags[i + 1] -> { units += PageUnit.Spread(i, i + 1); i += 2 }
+            else -> { units += PageUnit.Single(i); i += 1 }
+        }
+    }
+    return units
+}
+
 /** The pager only knows "page N of a chapter" (PLAN.md §8); loading a bitmap per page is
  * delegated to Coil ([MangaPage]/`PageFetcher`) for its caching/prefetch, while [PageProvider]
- * supplies the authoritative page count. */
+ * supplies the authoritative page count and per-page aspect ratio for spread pairing. */
 class ReaderViewModel(
     private val repository: LibraryRepository,
     source: MangaSource,
@@ -28,6 +54,10 @@ class ReaderViewModel(
 
     private val _pageCount = MutableStateFlow(chapter.pageCount ?: 0)
     val pageCount: StateFlow<Int> = _pageCount
+
+    /** One aspect-ratio flag per page (true = wider than tall); filled once, before pairing. */
+    private val _wideFlags = MutableStateFlow<List<Boolean>>(emptyList())
+    val wideFlags: StateFlow<List<Boolean>> = _wideFlags
 
     val currentPage = MutableStateFlow(chapter.lastPageIndex.coerceAtLeast(0))
 
@@ -55,7 +85,12 @@ class ReaderViewModel(
                 dateAdded = 0L,
             )
             val provider = pageProviderFor(domainChapter, source)
-            _pageCount.value = provider.pageCount
+            val count = provider.pageCount
+            _pageCount.value = count
+            _wideFlags.value = (0 until count).map { i ->
+                val size = provider.pageSize(i)
+                size.width > size.height
+            }
             provider.close()
         }
     }

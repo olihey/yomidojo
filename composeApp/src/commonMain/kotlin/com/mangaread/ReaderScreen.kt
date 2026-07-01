@@ -3,6 +3,9 @@ package com.mangaread
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
@@ -24,7 +27,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -39,14 +41,17 @@ private enum class TapZone { BACKWARD, FORWARD, MENU }
 
 /**
  * Pure UI over "page N of a chapter" (PLAN.md §8), plus the gesture/polish bundle (§8.1):
- * RTL-aware tap zones, double-tap zoom, keep-screen-on, volume-key paging, and a one-time
- * gesture-help overlay. Double-page spread detection is deferred past this slice.
+ * RTL-aware tap zones, double-tap zoom, keep-screen-on, volume-key paging, a one-time
+ * gesture-help overlay, and double-page spread pairing on wide (landscape/tablet) containers.
  */
 @Composable
 fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit) {
     val pageCount by viewModel.pageCount.collectAsState()
+    val wideFlags by viewModel.wideFlags.collectAsState()
 
-    if (pageCount <= 0) {
+    // Wait for both the page count AND every page's aspect ratio before building the pager,
+    // so spread pairing (which needs the full picture) never has to reshuffle mid-read.
+    if (pageCount <= 0 || wideFlags.size < pageCount) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
         }
@@ -55,46 +60,64 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit) {
 
     KeepScreenOn(enabled = true)
 
-    val pagerState = rememberPagerState(initialPage = viewModel.currentPage.value.coerceIn(0, pageCount - 1)) { pageCount }
-    val scope = rememberCoroutineScope()
-    var showChrome by remember { mutableStateOf(true) }
-    val showGestureHelp by viewModel.showGestureHelp.collectAsState()
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+        val pairPortrait = maxWidth > maxHeight
+        val units = remember(wideFlags, pairPortrait) { buildPageUnits(pageCount, wideFlags, pairPortrait) }
+        val initialUnit = remember(units) { unitIndexForPage(units, viewModel.currentPage.value) }
 
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { viewModel.onPageChanged(it) }
-    }
+        val pagerState = rememberPagerState(initialPage = initialUnit.coerceIn(0, units.size - 1)) { units.size }
+        val scope = rememberCoroutineScope()
+        var showChrome by remember { mutableStateOf(true) }
+        val showGestureHelp by viewModel.showGestureHelp.collectAsState()
 
-    DisposableEffect(viewModel.readingDirectionRtl) {
-        VolumeKeyBus.onVolumeKey = { down ->
-            val forward = if (viewModel.readingDirectionRtl) !down else down
-            scrollBy(pagerState, scope, if (forward) 1 else -1, pageCount)
-            true
+        LaunchedEffect(pagerState, units) {
+            snapshotFlow { pagerState.currentPage }.collect { unitIndex ->
+                viewModel.onPageChanged(progressIndexFor(units.getOrNull(unitIndex)))
+            }
         }
-        onDispose { VolumeKeyBus.onVolumeKey = null }
-    }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        DisposableEffect(viewModel.readingDirectionRtl, units.size) {
+            VolumeKeyBus.onVolumeKey = { down ->
+                val forward = if (viewModel.readingDirectionRtl) !down else down
+                scrollBy(pagerState, scope, if (forward) 1 else -1, units.size)
+                true
+            }
+            onDispose { VolumeKeyBus.onVolumeKey = null }
+        }
+
         HorizontalPager(
             state = pagerState,
             reverseLayout = viewModel.readingDirectionRtl,
             modifier = Modifier.fillMaxSize(),
-        ) { index ->
-            ReaderPage(
-                pageModel = viewModel.pageModel,
-                index = index,
-                isRtl = viewModel.readingDirectionRtl,
-                onZoneTap = { zone ->
-                    when (zone) {
-                        TapZone.FORWARD -> scrollBy(pagerState, scope, 1, pageCount)
-                        TapZone.BACKWARD -> scrollBy(pagerState, scope, -1, pageCount)
-                        TapZone.MENU -> showChrome = !showChrome
+        ) { unitIndex ->
+            val onZoneTap: (TapZone) -> Unit = { zone ->
+                when (zone) {
+                    TapZone.FORWARD -> scrollBy(pagerState, scope, 1, units.size)
+                    TapZone.BACKWARD -> scrollBy(pagerState, scope, -1, units.size)
+                    TapZone.MENU -> showChrome = !showChrome
+                }
+            }
+            when (val unit = units[unitIndex]) {
+                is PageUnit.Single -> ReaderPage(viewModel.pageModel, unit.index, viewModel.readingDirectionRtl, onZoneTap)
+                is PageUnit.Spread -> {
+                    val order = if (viewModel.readingDirectionRtl) listOf(unit.second, unit.first) else listOf(unit.first, unit.second)
+                    Row(Modifier.fillMaxSize()) {
+                        order.forEach { pageIndex ->
+                            ReaderPage(
+                                viewModel.pageModel,
+                                pageIndex,
+                                viewModel.readingDirectionRtl,
+                                onZoneTap,
+                                modifier = Modifier.weight(1f).fillMaxHeight(),
+                            )
+                        }
                     }
-                },
-            )
+                }
+            }
         }
         if (showChrome) {
             Text(
-                "${pagerState.currentPage + 1} / $pageCount",
+                "${pagerState.currentPage + 1} / ${units.size}",
                 color = Color.White,
                 modifier = Modifier.align(Alignment.BottomCenter),
             )
@@ -108,18 +131,37 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit) {
     }
 }
 
-private fun scrollBy(pagerState: PagerState, scope: CoroutineScope, delta: Int, pageCount: Int) {
-    val target = (pagerState.currentPage + delta).coerceIn(0, pageCount - 1)
+private fun unitIndexForPage(units: List<PageUnit>, page: Int): Int =
+    units.indexOfFirst { unit ->
+        when (unit) {
+            is PageUnit.Single -> unit.index >= page
+            is PageUnit.Spread -> unit.first >= page || unit.second >= page
+        }
+    }.let { if (it < 0) units.lastIndex.coerceAtLeast(0) else it }
+
+private fun progressIndexFor(unit: PageUnit?): Int = when (unit) {
+    null -> 0
+    is PageUnit.Single -> unit.index
+    is PageUnit.Spread -> maxOf(unit.first, unit.second)
+}
+
+private fun scrollBy(pagerState: PagerState, scope: CoroutineScope, delta: Int, unitCount: Int) {
+    val target = (pagerState.currentPage + delta).coerceIn(0, unitCount - 1)
     scope.launch { pagerState.animateScrollToPage(target) }
 }
 
 @Composable
-private fun ReaderPage(pageModel: String, index: Int, isRtl: Boolean, onZoneTap: (TapZone) -> Unit) {
+private fun ReaderPage(
+    pageModel: String,
+    index: Int,
+    isRtl: Boolean,
+    onZoneTap: (TapZone) -> Unit,
+    modifier: Modifier = Modifier.fillMaxSize(),
+) {
     var scale by remember { mutableStateOf(1f) }
     var origin by remember { mutableStateOf(TransformOrigin.Center) }
     Box(
-        Modifier
-            .fillMaxSize()
+        modifier
             .pointerInput(isRtl) {
                 detectTapGestures(
                     onDoubleTap = { pos ->

@@ -77,6 +77,31 @@ class LibraryRepository(db: MangaDatabase) {
             )
         }
 
+    /** Bulk mark/unmark specific chapters (PLAN.md §7.5 series-screen selection). */
+    suspend fun markChaptersProgress(chapters: List<Pair<String, Int?>>, completed: Boolean) =
+        withContext(ioDispatcher) {
+            val now = nowEpochMillis()
+            q.transaction {
+                chapters.forEach { (chapterId, pageCount) ->
+                    val lastPage = if (completed) ((pageCount ?: 1) - 1).coerceAtLeast(0) else 0
+                    q.upsertProgress(chapterId, lastPage.toLong(), if (completed) 1 else 0, now, null)
+                }
+            }
+        }
+
+    /** Bulk mark/unmark every chapter of the given series (PLAN.md §7.5 library selection). */
+    suspend fun markSeriesProgress(seriesIds: List<String>, completed: Boolean) = withContext(ioDispatcher) {
+        val now = nowEpochMillis()
+        q.transaction {
+            seriesIds.forEach { seriesId ->
+                q.selectChaptersForSeries(seriesId).executeAsList().forEach { c ->
+                    val lastPage = if (completed) ((c.page_count ?: 1L) - 1).coerceAtLeast(0) else 0L
+                    q.upsertProgress(c.id, lastPage, if (completed) 1 else 0, now, null)
+                }
+            }
+        }
+    }
+
     /** Persist the granted library root so it's remembered across restarts (PLAN.md §5 source table). */
     suspend fun saveLocalRoot(rootLocator: String, displayName: String) = withContext(ioDispatcher) {
         q.upsertSource(

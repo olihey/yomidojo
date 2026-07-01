@@ -6,6 +6,7 @@ import com.mangaread.core.domain.Series as DomainSeries
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -23,11 +24,50 @@ class SeriesViewModel(
     val chapters: StateFlow<List<ChapterCard>> =
         repository.observeChapters(seriesId).stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Multi-select chapters (individually or by volume) for bulk read/unread (PLAN.md §7.5). */
+    val selectionMode = MutableStateFlow(false)
+    val selectedIds = MutableStateFlow<Set<String>>(emptySet())
+
     fun toggleRead(chapter: ChapterCard) {
         scope.launch {
             val nowCompleted = !chapter.completed
             val lastPage = if (nowCompleted) (chapter.pageCount ?: 1) - 1 else 0
             repository.markProgress(chapter.id, lastPage.coerceAtLeast(0), nowCompleted)
+        }
+    }
+
+    fun enterSelectionMode(chapterId: String) {
+        selectionMode.value = true
+        selectedIds.value = setOf(chapterId)
+    }
+
+    fun toggleSelected(chapterId: String) {
+        selectedIds.value = if (chapterId in selectedIds.value) selectedIds.value - chapterId else selectedIds.value + chapterId
+        if (selectedIds.value.isEmpty()) selectionMode.value = false
+    }
+
+    /** Tapping a volume header selects/deselects every chapter in that volume. */
+    fun toggleVolumeSelected(volume: Double?) {
+        val ids = chapters.value.filter { it.volume == volume }.map { it.id }.toSet()
+        val allSelected = ids.isNotEmpty() && ids.all { it in selectedIds.value }
+        selectionMode.value = true
+        selectedIds.value = if (allSelected) selectedIds.value - ids else selectedIds.value + ids
+        if (selectedIds.value.isEmpty()) selectionMode.value = false
+    }
+
+    fun selectAll() { selectedIds.value = chapters.value.map { it.id }.toSet() }
+    fun selectNone() { selectedIds.value = emptySet() }
+
+    fun exitSelectionMode() {
+        selectionMode.value = false
+        selectedIds.value = emptySet()
+    }
+
+    fun markSelectedRead(completed: Boolean) {
+        val entries = chapters.value.filter { it.id in selectedIds.value }.map { it.id to it.pageCount }
+        scope.launch {
+            repository.markChaptersProgress(entries, completed)
+            exitSelectionMode()
         }
     }
 }
