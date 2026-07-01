@@ -13,18 +13,23 @@ import java.io.FileOutputStream
 import java.util.zip.ZipInputStream
 
 /**
- * Extracts and caches one chapter's first-page cover to app-internal storage (PLAN.md §9),
- * keyed by chapter id so it survives app restarts and is never written under a user-granted
- * root (which can disappear). Called once per chapter right after it's persisted by a scan.
- * Page count is counted every scan (cheap: entry names only, no image bytes read) even when
- * the cover is already cached, since that's what feeds the read-percentage overlay (§7.2).
+ * Extracts and caches one chapter's first-page cover to the app cache dir (PLAN.md §9), keyed by
+ * chapter id and never written under a user-granted root (which can disappear on its own). The
+ * cache dir is OS-purgeable — Android can delete it under storage pressure at any time — so
+ * [coverPathExists] lets callers detect a vanished file and re-run [ensureCover] to regenerate
+ * it, rather than trusting a stale cover_path forever. Called once per chapter right after it's
+ * persisted by a scan. Page count is counted every scan (cheap: entry names only, no image bytes
+ * read) even when the cover is already cached, since that's what feeds the read-percentage
+ * overlay (§7.2).
  */
 class AndroidChapterCoverCache(
     private val context: Context,
     private val source: SafMangaSource,
 ) : ChapterCoverCache {
 
-    private val dir by lazy { File(context.filesDir, "chapter_covers").apply { mkdirs() } }
+    private val dir by lazy { File(context.cacheDir, "chapter_covers").apply { mkdirs() } }
+
+    override fun coverPathExists(path: String): Boolean = File(path).let { it.exists() && it.length() > 0L }
 
     override suspend fun ensureCover(chapter: Chapter): ChapterScanResult? = withContext(ioDispatcher) {
         when (chapter.format) {

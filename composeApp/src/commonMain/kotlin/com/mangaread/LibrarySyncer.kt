@@ -73,7 +73,11 @@ class LibrarySyncer(
         val known = repository.coverStatesForSeries(seriesId)
         fun needsWork(chapter: Chapter): Boolean {
             val state = known[chapter.id]
-            return state == null || state.coverPath == null || (state.pageCount ?: 0) <= 0
+            val coverPath = state?.coverPath
+            // The cache dir is OS-purgeable, so a recorded cover_path isn't trustworthy on its
+            // own — re-generate whenever the file itself is actually gone (PLAN.md §9).
+            val coverMissing = coverPath == null || !cache.coverPathExists(coverPath)
+            return state == null || coverMissing || (state.pageCount ?: 0) <= 0
         }
 
         val coverChapter = chapters.minWith(seriesCoverOrder)

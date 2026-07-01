@@ -355,6 +355,13 @@ accessible and survives SAF/bookmark revocation — never store covers under a u
 root, which can disappear. User-override covers (designed-for, below) write to the same
 internal directory.
 
+**Chapter cover cache (built ahead of Phase 3, Android).** First-page chapter covers
+(`chapter.cover_path`, generated at scan time — see Phase 2 status below) are a separate,
+narrower case: they're regenerable at any time from the source file, so they live in the
+OS-purgeable **app cache dir** (`Context.cacheDir`), not app-internal storage. A scan checks
+the cached file's actual existence (not just the DB's `cover_path`) and re-generates it if the
+OS has reclaimed it. This distinction matters — don't "fix" it by moving them to `filesDir`.
+
 ### 9.2 Enrichment pipeline & rate limiting
 
 A first scan of a large library must not fire one AniList request per series in parallel —
