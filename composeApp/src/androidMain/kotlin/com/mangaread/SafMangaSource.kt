@@ -27,6 +27,11 @@ class SafMangaSource(private val context: Context) : MangaSource {
     override val id: String = "local"
     override val capabilities: Set<SourceCapability> = setOf(SourceCapability.RANDOM_ACCESS)
 
+    override suspend fun canAccess(rootLocator: String): Boolean = withContext(ioDispatcher) {
+        val uri = Uri.parse(rootLocator)
+        context.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission }
+    }
+
     override suspend fun list(path: String): List<SourceEntry> = withContext(ioDispatcher) {
         val uri = Uri.parse(path)
         val docId =

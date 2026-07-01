@@ -18,6 +18,11 @@ import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.key.Keyer
 import coil3.request.Options
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
 
@@ -43,7 +48,7 @@ class MainActivity : ComponentActivity() {
         val prefs = LibraryPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
-        viewModel = LibraryViewModel(repository, scanner, prefs)
+        viewModel = LibraryViewModel(repository, scanner, source, prefs)
 
         pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
@@ -57,7 +62,18 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        scheduleBackgroundScan()
+
         enableEdgeToEdge()
         setContent { App(viewModel) { pickFolder.launch(null) } }
+    }
+
+    /** Keep the library fresh in the background (no-ops if no root/grant — see ScanWorker). */
+    private fun scheduleBackgroundScan() {
+        val request = PeriodicWorkRequestBuilder<ScanWorker>(12, TimeUnit.HOURS)
+            .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
+            .build()
+        WorkManager.getInstance(applicationContext)
+            .enqueueUniquePeriodicWork("library-scan", ExistingPeriodicWorkPolicy.KEEP, request)
     }
 }

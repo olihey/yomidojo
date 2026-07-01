@@ -117,6 +117,12 @@ WHERE c.series_id = ? AND (p.completed IS NULL OR p.completed = 0);
 recentlyAddedChapters:
 SELECT * FROM chapter ORDER BY date_added DESC LIMIT ?;
 
+-- Recently-added feed (§9): newest chapters with their series title, for the Recent view.
+recentChaptersWithSeries:
+SELECT s.title AS series_title, c.display_name, c.volume, c.number, c.date_added
+FROM chapter c JOIN series s ON s.id = c.series_id
+ORDER BY c.date_added DESC, c.display_name ASC LIMIT ?;
+
 -- Reconcile: remove things no longer on disk (run only after a successful full scan) ------
 -- Within a kept series, drop chapters that weren't seen this scan.
 deleteChaptersForSeriesNotIn:

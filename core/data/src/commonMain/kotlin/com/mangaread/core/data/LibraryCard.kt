@@ -17,3 +17,12 @@ data class LibraryCard(
      */
     val coverModel: String?,
 )
+
+/** A row in the recently-added feed. */
+data class RecentChapter(
+    val seriesTitle: String,
+    val chapterName: String,
+    val volume: Double?,
+    val number: Double?,
+    val dateAdded: Long,
+)

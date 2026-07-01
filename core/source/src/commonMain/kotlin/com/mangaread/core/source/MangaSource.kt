@@ -14,6 +14,9 @@ interface MangaSource {
     val id: String
     val capabilities: Set<SourceCapability>
 
+    /** Whether the granted root is still readable (SAF permissions can be revoked). */
+    suspend fun canAccess(rootLocator: String): Boolean = true
+
     suspend fun list(path: String): List<SourceEntry>
     suspend fun open(locator: String): OkioSource
     suspend fun changesSince(token: String?): ChangeSet

@@ -39,6 +39,20 @@ class LibraryRepository(db: MangaDatabase) {
             }
         }
 
+    /** Recently-added chapters with their series title (PLAN.md §9). */
+    fun observeRecentlyAdded(limit: Long = 60): Flow<List<RecentChapter>> =
+        q.recentChaptersWithSeries(limit).asFlow().mapToList(ioDispatcher).map { rows ->
+            rows.map { r ->
+                RecentChapter(
+                    seriesTitle = r.series_title,
+                    chapterName = r.display_name,
+                    volume = r.volume,
+                    number = r.number,
+                    dateAdded = r.date_added,
+                )
+            }
+        }
+
     /** Persist the granted library root so it's remembered across restarts (PLAN.md §5 source table). */
     suspend fun saveLocalRoot(rootLocator: String, displayName: String) = withContext(ioDispatcher) {
         q.upsertSource(

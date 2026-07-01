@@ -2,8 +2,9 @@ package com.mangaread
 
 import com.mangaread.core.data.LibraryCard
 import com.mangaread.core.data.LibraryRepository
-import com.mangaread.core.domain.nowEpochMillis
+import com.mangaread.core.data.RecentChapter
 import com.mangaread.core.scanner.LibraryScanner
+import com.mangaread.core.source.MangaSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,17 +22,23 @@ enum class ViewMode { LIST, GRID, DETAILED }
 
 class LibraryViewModel(
     private val repository: LibraryRepository,
-    private val scanner: LibraryScanner,
+    scanner: LibraryScanner,
+    private val source: MangaSource,
     private val prefs: LibraryPreferences,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
+    private val syncer = LibrarySyncer(repository, scanner)
+
     private val _progress = MutableStateFlow<ScanProgress?>(null)
     val progress: StateFlow<ScanProgress?> = _progress
 
     private val _canRescan = MutableStateFlow(false)
     val canRescan: StateFlow<Boolean> = _canRescan
 
-    // Library controls (PLAN §7.1) — initial values restored from persisted prefs.
+    /** True when a library root is saved but its SAF permission was lost (PLAN.md §12). */
+    private val _needsReGrant = MutableStateFlow(false)
+    val needsReGrant: StateFlow<Boolean> = _needsReGrant
+
     val query = MutableStateFlow("")
     val sort = MutableStateFlow(prefs.sort)
     val ascending = MutableStateFlow(prefs.ascending)
@@ -41,7 +48,6 @@ class LibraryViewModel(
     private val allCards: StateFlow<List<LibraryCard>> =
         repository.observeLibrary().stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /** Filtered + sorted cards the UI renders. */
     val cards: StateFlow<List<LibraryCard>> =
         combine(allCards, query, sort, ascending, unreadOnly) { cards, q, sortMode, asc, unread ->
             var list = cards
@@ -54,9 +60,15 @@ class LibraryViewModel(
             list.sortedWith(if (asc) comparator else comparator.reversed())
         }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val recent: StateFlow<List<RecentChapter>> =
+        repository.observeRecentlyAdded().stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     init {
-        scope.launch { _canRescan.value = repository.savedLocalRoot() != null }
-        // Persist view preferences whenever they change (first emit re-writes the current value, harmless).
+        scope.launch {
+            val root = repository.savedLocalRoot()
+            _canRescan.value = root != null
+            if (root != null && !source.canAccess(root)) _needsReGrant.value = true
+        }
         scope.launch { viewMode.collect { prefs.viewMode = it } }
         scope.launch { sort.collect { prefs.sort = it } }
         scope.launch { ascending.collect { prefs.ascending = it } }
@@ -67,6 +79,7 @@ class LibraryViewModel(
         scope.launch {
             repository.saveLocalRoot(rootLocator, displayName)
             _canRescan.value = true
+            _needsReGrant.value = false
             runScan(rootLocator)
         }
     }
@@ -82,19 +95,10 @@ class LibraryViewModel(
 
     private suspend fun runScan(rootLocator: String) {
         if (_progress.value != null) return
-        var seriesCount = 0
-        var chapterCount = 0
-        val scanAt = nowEpochMillis()
+        if (!source.canAccess(rootLocator)) { _needsReGrant.value = true; return }
         _progress.value = ScanProgress(0, 0)
         try {
-            scanner.scan(rootLocator, scanAt).collect { scanned ->
-                repository.persistSeries(scanned.series, scanned.chapters)
-                seriesCount++
-                chapterCount += scanned.chapters.size
-                _progress.value = ScanProgress(seriesCount, chapterCount)
-            }
-            // Reached only if the scan completed without throwing: safe to prune removed series.
-            repository.deleteSeriesNotScannedAt(scanAt)
+            syncer.sync(rootLocator) { s, c -> _progress.value = ScanProgress(s, c) }
         } finally {
             _progress.value = null
         }
