@@ -23,8 +23,11 @@ class LibrarySyncer(
             repository.persistSeries(scanned.series, scanned.chapters)
             if (coverCache != null) {
                 scanned.chapters.forEach { chapter ->
-                    // ensureCover is a no-op if the cached file already exists (§9).
-                    coverCache.ensureCover(chapter)?.let { path -> repository.setChapterCoverPath(chapter.id, path) }
+                    // Cover generation is a no-op if the cached file already exists (§9); page
+                    // count is still (cheaply) recounted so the read-percentage overlay works.
+                    val result = coverCache.ensureCover(chapter) ?: return@forEach
+                    result.coverPath?.let { path -> repository.setChapterCoverPath(chapter.id, path) }
+                    repository.setChapterPageCount(chapter.id, result.pageCount)
                 }
             }
             series++

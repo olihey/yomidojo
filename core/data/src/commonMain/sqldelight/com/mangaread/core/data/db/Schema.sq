@@ -126,6 +126,10 @@ ORDER BY c.volume IS NULL, c.volume, c.number IS NULL, c.number, c.display_name;
 updateChapterCoverPath:
 UPDATE chapter SET cover_path = ? WHERE id = ?;
 
+-- Real page count, counted at scan time (drives the read-percentage overlay, §7.2).
+updateChapterPageCount:
+UPDATE chapter SET page_count = ? WHERE id = ?;
+
 -- Derived unread count drives hide-read and the cover badge (§7).
 unreadCountForSeries:
 SELECT COUNT(*) FROM chapter c

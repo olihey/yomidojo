@@ -16,6 +16,8 @@ import java.util.zip.ZipInputStream
  * Extracts and caches one chapter's first-page cover to app-internal storage (PLAN.md §9),
  * keyed by chapter id so it survives app restarts and is never written under a user-granted
  * root (which can disappear). Called once per chapter right after it's persisted by a scan.
+ * Page count is counted every scan (cheap: entry names only, no image bytes read) even when
+ * the cover is already cached, since that's what feeds the read-percentage overlay (§7.2).
  */
 class AndroidChapterCoverCache(
     private val context: Context,
@@ -24,39 +26,61 @@ class AndroidChapterCoverCache(
 
     private val dir by lazy { File(context.filesDir, "chapter_covers").apply { mkdirs() } }
 
-    override suspend fun ensureCover(chapter: Chapter): String? = withContext(ioDispatcher) {
-        val file = File(dir, "${chapter.id}.jpg")
-        if (file.exists() && file.length() > 0L) return@withContext file.absolutePath
-        val bytes = firstPageBytes(chapter) ?: return@withContext null
-        try {
+    override suspend fun ensureCover(chapter: Chapter): ChapterScanResult? = withContext(ioDispatcher) {
+        when (chapter.format) {
+            ChapterFormat.IMAGE_DIR -> {
+                val images = source.list(chapter.locator)
+                    .filter { !it.isDirectory && it.name.isImageName() }
+                    .sortedBy { it.name }
+                if (images.isEmpty()) return@withContext null
+                val path = cachedOrGenerate(chapter.id) {
+                    context.contentResolver.openInputStream(Uri.parse(images.first().locator))?.use { it.readBytes() }
+                }
+                ChapterScanResult(path, images.size)
+            }
+            ChapterFormat.CBZ -> {
+                val names = listCbzImageNames(chapter.locator)
+                if (names.isEmpty()) return@withContext null
+                val path = cachedOrGenerate(chapter.id) { readCbzEntryBytes(chapter.locator, names.first()) }
+                ChapterScanResult(path, names.size)
+            }
+        }
+    }
+
+    private fun cachedOrGenerate(chapterId: String, bytesProvider: () -> ByteArray?): String? {
+        val file = File(dir, "$chapterId.jpg")
+        if (file.exists() && file.length() > 0L) return file.absolutePath
+        val bytes = bytesProvider() ?: return null
+        return try {
             val bitmap = decodeSampled(bytes, 480, 720)
             FileOutputStream(file).use { out -> bitmap.compress(Bitmap.CompressFormat.JPEG, 85, out) }
             file.absolutePath
         } catch (t: Throwable) {
-            android.util.Log.w("ChapterCoverCache", "cover generation failed for ${chapter.id}", t)
+            android.util.Log.w("ChapterCoverCache", "cover generation failed for $chapterId", t)
             null
         }
     }
 
-    private suspend fun firstPageBytes(chapter: Chapter): ByteArray? = when (chapter.format) {
-        ChapterFormat.IMAGE_DIR -> firstFolderImageBytes(chapter.locator)
-        ChapterFormat.CBZ -> firstCbzImageBytes(chapter.locator)
+    private fun listCbzImageNames(cbzLocator: String): List<String> {
+        val names = mutableListOf<String>()
+        context.contentResolver.openInputStream(Uri.parse(cbzLocator))?.use { input ->
+            ZipInputStream(input.buffered()).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    if (!entry.isDirectory && entry.name.isImageName()) names += entry.name
+                    entry = zis.nextEntry
+                }
+            }
+        }
+        return names.sorted()
     }
 
-    private suspend fun firstFolderImageBytes(dirLocator: String): ByteArray? {
-        val first = source.list(dirLocator)
-            .filter { !it.isDirectory && it.name.isImageName() }
-            .minByOrNull { it.name }
-            ?: return null
-        return context.contentResolver.openInputStream(Uri.parse(first.locator))?.use { it.readBytes() }
-    }
-
-    private fun firstCbzImageBytes(cbzLocator: String): ByteArray? {
+    private fun readCbzEntryBytes(cbzLocator: String, targetName: String): ByteArray? {
         val input = context.contentResolver.openInputStream(Uri.parse(cbzLocator)) ?: return null
         ZipInputStream(input.buffered()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
-                if (!entry.isDirectory && entry.name.isImageName()) return zis.readBytes()
+                if (entry.name == targetName) return zis.readBytes()
                 entry = zis.nextEntry
             }
         }

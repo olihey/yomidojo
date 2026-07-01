@@ -71,6 +71,11 @@ class LibraryRepository(db: MangaDatabase) {
         q.updateChapterCoverPath(path, chapterId)
     }
 
+    /** Records the chapter's real page count, feeding the read-percentage overlay (PLAN.md §7.2). */
+    suspend fun setChapterPageCount(chapterId: String, pageCount: Int) = withContext(ioDispatcher) {
+        q.updateChapterPageCount(pageCount.toLong(), chapterId)
+    }
+
     /** Persist reading progress; drives resume, the unread badge, and the recently-read sort. */
     suspend fun markProgress(chapterId: String, lastPageIndex: Int, completed: Boolean) =
         withContext(ioDispatcher) {
