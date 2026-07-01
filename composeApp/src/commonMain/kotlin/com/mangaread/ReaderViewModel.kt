@@ -10,7 +10,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /** One pager "slot": a single page, or two portrait pages shown side by side (PLAN.md §8). */
@@ -61,6 +64,13 @@ class ReaderViewModel(
     val wideFlags: StateFlow<List<Boolean>> = _wideFlags
 
     val currentPage = MutableStateFlow(chapter.lastPageIndex.coerceAtLeast(0))
+
+    /** The chapter right after this one in the series (same order as the series screen), if
+     * any — lets the reader offer a "swipe past the last page to continue" transition. */
+    val nextChapter: StateFlow<ChapterCard?> = repository.observeChapters(chapter.seriesId).map { list ->
+        val index = list.indexOfFirst { it.id == chapter.id }
+        if (index in 0 until list.lastIndex) list[index + 1] else null
+    }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** One-time overlay explaining tap zones (PLAN.md §8.1); dismiss persists so it shows once. */
     private val _showGestureHelp = MutableStateFlow(!prefs.hasSeenGestureHelp)

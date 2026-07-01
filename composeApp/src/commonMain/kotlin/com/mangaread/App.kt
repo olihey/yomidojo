@@ -35,14 +35,31 @@ fun App(graph: AppGraph, onPickFolder: () -> Unit) {
             composable("reader/{seriesId}/{chapterId}") { entry ->
                 val seriesId = entry.arguments?.getString("seriesId") ?: return@composable
                 val chapterId = entry.arguments?.getString("chapterId") ?: return@composable
-                ReaderHost(graph, seriesId, chapterId, onBack = { navController.popBackStack() })
+                ReaderHost(
+                    graph, seriesId, chapterId,
+                    onBack = { navController.popBackStack() },
+                    // Swiping past the last page into the next-chapter preview replaces this
+                    // back-stack entry, so "back" from the next chapter returns to the series
+                    // screen rather than stepping backward chapter by chapter.
+                    onNavigateToChapter = { nextChapterId ->
+                        navController.navigate("reader/$seriesId/$nextChapterId") {
+                            popUpTo("reader/$seriesId/$chapterId") { inclusive = true }
+                        }
+                    },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ReaderHost(graph: AppGraph, seriesId: String, chapterId: String, onBack: () -> Unit) {
+private fun ReaderHost(
+    graph: AppGraph,
+    seriesId: String,
+    chapterId: String,
+    onBack: () -> Unit,
+    onNavigateToChapter: (String) -> Unit,
+) {
     val series by remember(seriesId) { graph.repository.observeSeries(seriesId) }.collectAsState(initial = null)
     val chapters by remember(seriesId) { graph.repository.observeChapters(seriesId) }.collectAsState(initial = emptyList())
     val chapter = chapters.find { it.id == chapterId } ?: return
@@ -52,5 +69,5 @@ private fun ReaderHost(graph: AppGraph, seriesId: String, chapterId: String, onB
     val viewModel = remember(chapter.id, rtl, title) {
         ReaderViewModel(graph.repository, graph.source, chapter, rtl, title, graph.readerPreferences)
     }
-    ReaderScreen(viewModel, onBack)
+    ReaderScreen(viewModel, onBack, onNavigateToChapter)
 }

@@ -329,6 +329,14 @@ when pages merely display:
   (`ImmersiveMode`, Android via `WindowInsetsControllerCompat` — restored on leaving the
   reader). The chrome overlay (series/chapter info, progress bar) shows on entry, auto-hides
   after 5s, and the center tap zone toggles it independently of the system bars.
+- **Scrubbable progress slider.** The chrome's progress bar is a `Slider`, not just a display —
+  dragging it jumps straight to that page (`onValueChangeFinished` → `pagerState.scrollToPage`)
+  for fast navigation through a long chapter.
+- **Swipe-to-next-chapter.** Past the last page, one extra pager slot previews the next
+  chapter's cover (sliding in with the same swipe motion, RTL-aware since it's just another
+  pager item); settling on it (not just overscrolling through during a fling) switches to that
+  chapter, replacing the current back-stack entry. Tap-zone forward/back stay clamped to real
+  pages — only a swipe can reach the preview.
 
 Tap-zone layout and the volume-key toggle live in settings (multiplatform-settings).
 
