@@ -360,7 +360,10 @@ when pages merely display:
   Pinch range is `MIN_ZOOM`–`MAX_ZOOM` (0.5×–5×) — zoom-out shrinks below "fit", not just
   zoom-in; double-tap toggles between "fit" (1×, recentered via an explicit reset — pinching
   through 1× on the way there does *not* auto-recenter, so it stays smooth in both directions)
-  and a 2.5× preset at the tap point.
+  and a 2.5× preset at the tap point. Webtoon-only: releasing a pinch that ended below 1×
+  animates straight back to "fit", centered (`ZoomableImage`'s `snapBackWhenZoomedOut`) — there's
+  no "inspect while shrunk" use case the way there is for zooming in, so the strip's normal
+  continuous-scroll feel always returns once fingers lift.
 - **One-time gesture-help overlay** on first open of the reader, dismissible.
 - **Immersive mode tied to the chrome overlay.** System status/navigation bars follow the same
   `showChrome` state as the series/chapter info + progress bar (`ImmersiveMode(enabled =

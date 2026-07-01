@@ -1,5 +1,7 @@
 package com.mangaread
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -584,6 +586,11 @@ private fun ZoomableImage(
     onZoomChanged: (Boolean) -> Unit,
     onGesture: () -> Unit,
     modifier: Modifier,
+    // Webtoon-only (PLAN.md §8.1): releasing a pinch that shrank the page below "fit" animates
+    // straight back to it instead of leaving the strip shrunk and its own scroll disabled —
+    // there's no "inspect while shrunk" use case the way there is for zooming in, so the
+    // continuous-scroll feel should always come back once fingers lift.
+    snapBackWhenZoomedOut: Boolean = false,
     tapGestures: suspend PointerInputScope.(
         zoomed: () -> Boolean,
         applyZoom: (Float, Offset, Offset) -> Unit,
@@ -593,10 +600,12 @@ private fun ZoomableImage(
     // Keyed on `index` so zoom/pan resets when the pager/column moves past this page.
     var scale by remember(index) { mutableStateOf(1f) }
     var offset by remember(index) { mutableStateOf(Offset.Zero) }
+    val scope = rememberCoroutineScope()
 
     // Pinching continuously through scale 1 should feel seamless in either direction, so this
-    // never snaps offset back to zero on its own — only an explicit resetZoom() (double-tap)
-    // recenters, since a pinch that happens to land near 1x isn't asking to be recentered.
+    // never snaps offset back to zero on its own — only an explicit resetZoom() (double-tap, or
+    // snapBackWhenZoomedOut once fingers lift) recenters, since a pinch that happens to land
+    // near 1x mid-gesture isn't asking to be recentered.
     fun applyZoom(newScale: Float, centroid: Offset, pan: Offset) {
         val coerced = newScale.coerceIn(MIN_ZOOM, MAX_ZOOM)
         offset = zoomOffset(offset, scale, coerced, centroid, pan)
@@ -608,6 +617,21 @@ private fun ZoomableImage(
         scale = 1f
         offset = Offset.Zero
         onZoomChanged(false)
+    }
+
+    // Animates scale/offset back to "fit", centered — used once fingers lift on a pinch that
+    // ended below 1x. A plain coroutine, not called from inside awaitPointerEventScope: that
+    // scope only permits a restricted set of suspend calls and animateTo isn't one of them.
+    fun animateSnapBack() {
+        val fromScale = scale
+        val fromOffset = offset
+        scope.launch {
+            Animatable(0f).animateTo(1f, tween(200)) {
+                scale = fromScale + (1f - fromScale) * value
+                offset = fromOffset * (1f - value)
+            }
+            onZoomChanged(false)
+        }
     }
 
     Box(
@@ -629,6 +653,7 @@ private fun ZoomableImage(
                             }
                         }
                     } while (event.changes.any { it.pressed })
+                    if (snapBackWhenZoomedOut && scale < 1f) animateSnapBack()
                 }
             },
     ) {
@@ -698,6 +723,7 @@ private fun WebtoonPage(
         onZoomChanged = onZoomChanged,
         onGesture = onInteracted,
         modifier = Modifier.fillMaxWidth().aspectRatio(aspectRatio),
+        snapBackWhenZoomedOut = true,
     ) { zoomed, applyZoom, resetZoom ->
         detectTapGestures(
             onDoubleTap = { pos ->
