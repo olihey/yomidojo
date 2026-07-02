@@ -18,6 +18,11 @@ data class LibraryCard(
     /** Set when enrichment ran but found no good-enough match (PLAN.md §9.2) — badge shows "✕"
      * instead of "?" for a series that's been tried and failed, vs. never queued yet. */
     val metadataCheckedAt: Long?,
+    /** AniList's per-language titles, once matched (PLAN.md §9) — feed the "series title"
+     * display setting; each is null if AniList didn't have that language for this work. */
+    val titleRomaji: String?,
+    val titleEnglish: String?,
+    val titleNative: String?,
     /**
      * Coil model for the cover. A real cached cover path if present, else a scheme-tagged
      * locator the platform cover fetcher resolves: "cbz:<uri>" (first image in the archive)

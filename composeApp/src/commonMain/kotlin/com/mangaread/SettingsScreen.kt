@@ -32,6 +32,13 @@ fun ThemeMode.label(): String = when (this) {
     ThemeMode.SYSTEM -> "Follow system setting"
 }
 
+fun TitleLanguage.label(): String = when (this) {
+    TitleLanguage.FILE -> "From file/folder name"
+    TitleLanguage.ANILIST_ROMAJI -> "AniList - Romaji"
+    TitleLanguage.ANILIST_ENGLISH -> "AniList - English"
+    TitleLanguage.ANILIST_NATIVE -> "AniList - Native"
+}
+
 /** Shared with the reader's chrome quick-switcher, so both use identical wording. */
 fun ReadingMode.label(): String = when (this) {
     ReadingMode.PAGED_LTR -> "Paged, left to right"
@@ -56,6 +63,7 @@ fun SettingsScreen(prefs: ReaderPreferences, appPreferences: AppPreferences, onB
     var invertTapZones by remember { mutableStateOf(prefs.invertTapZones) }
     var volumeKeyPaging by remember { mutableStateOf(prefs.volumeKeyPaging) }
     val themeMode by appPreferences.themeMode.collectAsState()
+    val titleLanguage by appPreferences.titleLanguage.collectAsState()
 
     Scaffold(
         topBar = {
@@ -83,6 +91,33 @@ fun SettingsScreen(prefs: ReaderPreferences, appPreferences: AppPreferences, onB
                 ) {
                     RadioButton(selected = mode == themeMode, onClick = { appPreferences.setThemeMode(mode) })
                     Text(mode.label())
+                }
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+            Text(
+                "Series title",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp),
+            )
+            Text(
+                "Which title to show for a matched series - falls back to the file/folder name " +
+                    "if AniList doesn't have that language for it.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            TitleLanguage.entries.forEach { language ->
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable { appPreferences.setTitleLanguage(language) }
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    RadioButton(selected = language == titleLanguage, onClick = { appPreferences.setTitleLanguage(language) })
+                    Text(language.label())
                 }
             }
 

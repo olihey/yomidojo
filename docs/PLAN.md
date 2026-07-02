@@ -129,7 +129,10 @@ CREATE TABLE series (
   external_id        TEXT,               -- AniList Media id once matched; primary sync key
   date_added         INTEGER NOT NULL,
   last_scanned       INTEGER,
-  metadata_checked_at INTEGER            -- set when enrichment ran but found no match (§9.2)
+  metadata_checked_at INTEGER,           -- set when enrichment ran but found no match (§9.2)
+  title_romaji       TEXT,               -- AniList's per-language titles, once matched -- feed
+  title_english      TEXT,               -- the "series title" display setting (§9); each falls
+  title_native       TEXT                -- back to `title` when that language isn't available
 );
 
 CREATE TABLE chapter (
@@ -189,7 +192,9 @@ Notes:
   `core/data/build.gradle.kts` (with an inline comment) works around the check; runtime
   correctness doesn't depend on it - `Schema.migrate()` applies the same `ALTER TABLE` against
   the real table, confirmed on-device against a live 302-series/12399-chapter library with no
-  data loss. Re-enable once there's a real migration history to verify against.
+  data loss. `2.sqm` (adding `title_romaji`/`title_english`/`title_native`, also Phase 3) hit the
+  same retrofit limitation and was verified the same way. Re-enable once there's a real migration
+  history to verify against.
 
 ---
 
@@ -747,6 +752,17 @@ rebind. "Release start" is a live library sort (`SortMode.RELEASE_START`, nulls 
 by `latestChapterAdded`). Verified end-to-end on-device against the real API (search -> match ->
 details -> cover download -> DB write -> UI update) and against the real ~302-series library
 across the schema migration (`1.sqm`, see §5's `verifyMigrations` note) with zero data loss.
+
+**Series title language setting.** A matched series stores all three AniList title languages
+(`title_romaji`/`title_english`/`title_native`, `2.sqm`), not just the "preferred" pick used for
+search/description purposes internally. `AppPreferences.titleLanguage` (a `StateFlow`, same
+propagate-live reasoning as `themeMode`) lets Settings choose which one the library/series/reader
+screens display - `LibraryCard.displayTitle(language)` / `Series.displayTitle(language)`
+(`DisplayTitle.kt`) fall back to the file-derived `title` whenever the chosen language wasn't
+available for that match, or the series isn't matched at all. Default is `FILE`, so existing
+behavior is unchanged until a user opts in. Verified on-device: re-matching a series and switching
+the setting to AniList - Romaji correctly retitled that series everywhere it's shown, while every
+other still-unmatched series kept showing its file name.
 
 **"Recently added chapters" feed** = a library filter/section backed by the
 `chapter.date_added` query, surfaced in Phase 1 (no dedicated screen, no upstream polling).

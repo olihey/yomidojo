@@ -20,7 +20,10 @@ data class RemoteWork(
 
 data class RemoteWorkDetails(
     val externalId: String,
-    val title: String,
+    val title: String,          // preferred title: english ?: romaji ?: native
+    val titleRomaji: String?,
+    val titleEnglish: String?,
+    val titleNative: String?,
     val author: String?,
     val description: String?,   // HTML stripped, "(Source: …)" removed
     val coverUrl: String?,

@@ -7,11 +7,16 @@ import kotlinx.coroutines.flow.StateFlow
 /** Light/dark, or follow the system setting. */
 enum class ThemeMode { LIGHT, DARK, SYSTEM }
 
+/** Which title to display for a series (PLAN.md §9): the scanned file/folder name, or one of
+ * AniList's title languages once matched. Each AniList option falls back to the file name if
+ * that language wasn't available for the matched work — see [displayTitle]. */
+enum class TitleLanguage { FILE, ANILIST_ROMAJI, ANILIST_ENGLISH, ANILIST_NATIVE }
+
 /**
- * App-wide display preferences (currently just theme). [themeMode] is a `StateFlow`, not a plain
- * settings-backed property like the other preferences classes — `App()` wraps the whole nav host
+ * App-wide display preferences. [themeMode]/[titleLanguage] are `StateFlow`s, not plain
+ * settings-backed properties like the other preferences classes — `App()` wraps the whole nav host
  * in `MaterialTheme`, above where `SettingsScreen` lives, so a change needs to propagate back up
- * rather than just being read once.
+ * rather than just being read once; the library/series screens need the same live propagation.
  */
 class AppPreferences(private val settings: Settings) {
 
@@ -27,7 +32,20 @@ class AppPreferences(private val settings: Settings) {
         settings.putString(KEY_THEME_MODE, mode.name)
     }
 
+    private val _titleLanguage = MutableStateFlow(
+        settings.getStringOrNull(KEY_TITLE_LANGUAGE)
+            ?.let { runCatching { TitleLanguage.valueOf(it) }.getOrNull() }
+            ?: TitleLanguage.FILE,
+    )
+    val titleLanguage: StateFlow<TitleLanguage> = _titleLanguage
+
+    fun setTitleLanguage(language: TitleLanguage) {
+        _titleLanguage.value = language
+        settings.putString(KEY_TITLE_LANGUAGE, language.name)
+    }
+
     private companion object {
         const val KEY_THEME_MODE = "app.themeMode"
+        const val KEY_TITLE_LANGUAGE = "app.titleLanguage"
     }
 }

@@ -58,6 +58,7 @@ fun SeriesScreen(
     viewModel: SeriesViewModel,
     onBack: () -> Unit,
     onChapterClick: (String) -> Unit,
+    titleLanguage: TitleLanguage,
 ) {
     val series by viewModel.series.collectAsState()
     val chapters by viewModel.chapters.collectAsState()
@@ -85,7 +86,7 @@ fun SeriesScreen(
                 )
             } else {
                 TopAppBar(
-                    title = { Text(series?.title ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    title = { Text(series?.displayTitle(titleLanguage) ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     navigationIcon = {
                         IconButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.titleLarge) }
                     },

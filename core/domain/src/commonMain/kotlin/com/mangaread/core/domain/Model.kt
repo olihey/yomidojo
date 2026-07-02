@@ -31,6 +31,11 @@ data class Series(
     val externalId: String? = null,   // AniList Media id; primary sync key
     val dateAdded: Long,
     val lastScanned: Long? = null,
+    // AniList's per-language titles, once matched (PLAN.md §9) — feed the "series title"
+    // display setting; each is null if AniList didn't have that language for this work.
+    val titleRomaji: String? = null,
+    val titleEnglish: String? = null,
+    val titleNative: String? = null,
 )
 
 data class Chapter(

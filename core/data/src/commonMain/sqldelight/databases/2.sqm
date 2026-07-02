@@ -1,0 +1,5 @@
+-- v2 -> v3: store every AniList title language, not just the "preferred" pick, so the
+-- settings screen can offer a per-language display choice (PLAN.md §9).
+ALTER TABLE series ADD COLUMN title_romaji TEXT;
+ALTER TABLE series ADD COLUMN title_english TEXT;
+ALTER TABLE series ADD COLUMN title_native TEXT;

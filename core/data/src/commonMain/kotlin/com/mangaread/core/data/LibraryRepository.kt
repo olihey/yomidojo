@@ -41,6 +41,9 @@ class LibraryRepository(db: MangaDatabase) {
                     startYear = r.start_year?.toInt(),
                     externalId = r.external_id,
                     metadataCheckedAt = r.metadata_checked_at,
+                    titleRomaji = r.title_romaji,
+                    titleEnglish = r.title_english,
+                    titleNative = r.title_native,
                     coverModel = coverModel(r.cover_path, r.cover_format, r.cover_locator),
                 )
             }
@@ -204,6 +207,9 @@ class LibraryRepository(db: MangaDatabase) {
                 cover_path = coverPath,
                 start_year = details.startYear?.toLong(),
                 external_id = details.externalId,
+                title_romaji = details.titleRomaji,
+                title_english = details.titleEnglish,
+                title_native = details.titleNative,
                 id = seriesId,
             )
         }
@@ -234,5 +240,8 @@ class LibraryRepository(db: MangaDatabase) {
         externalId = r.external_id,
         dateAdded = r.date_added,
         lastScanned = r.last_scanned,
+        titleRomaji = r.title_romaji,
+        titleEnglish = r.title_english,
+        titleNative = r.title_native,
     )
 }

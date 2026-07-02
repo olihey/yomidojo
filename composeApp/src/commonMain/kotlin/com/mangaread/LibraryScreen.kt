@@ -59,6 +59,7 @@ fun LibraryScreen(
     onPickFolder: () -> Unit,
     onSeriesClick: (String) -> Unit,
     onSettingsClick: () -> Unit,
+    titleLanguage: TitleLanguage,
 ) {
     val progress by viewModel.progress.collectAsState()
     val canRescan by viewModel.canRescan.collectAsState()
@@ -122,9 +123,9 @@ fun LibraryScreen(
                     if (!selectionMode) viewModel.enterSelectionMode(id)
                 }
                 when (viewMode) {
-                    ViewMode.LIST -> ListLayout(cards, selectionMode, selectedIds, onClick, onLongClick)
-                    ViewMode.GRID -> GridLayout(cards, selectionMode, selectedIds, onClick, onLongClick)
-                    ViewMode.DETAILED -> DetailedLayout(cards, selectionMode, selectedIds, onClick, onLongClick)
+                    ViewMode.LIST -> ListLayout(cards, selectionMode, selectedIds, onClick, onLongClick, titleLanguage)
+                    ViewMode.GRID -> GridLayout(cards, selectionMode, selectedIds, onClick, onLongClick, titleLanguage)
+                    ViewMode.DETAILED -> DetailedLayout(cards, selectionMode, selectedIds, onClick, onLongClick, titleLanguage)
                 }
             }
         }
@@ -210,19 +211,21 @@ private fun ListLayout(
     selectedIds: Set<String>,
     onClick: (String) -> Unit,
     onLongClick: (String) -> Unit,
+    titleLanguage: TitleLanguage,
 ) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(cards, key = { it.id }) { c ->
+            val title = c.displayTitle(titleLanguage)
             ListItem(
                 modifier = Modifier.combinedClickable(onClick = { onClick(c.id) }, onLongClick = { onLongClick(c.id) }),
-                headlineContent = { Text(c.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                headlineContent = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 supportingContent = { Text("${c.chapterCount} chapters · ${c.unreadCount} unread") },
                 leadingContent = {
                     if (selectionMode) {
                         Checkbox(checked = c.id in selectedIds, onCheckedChange = { onClick(c.id) })
                     } else {
                         Box {
-                            CoverPlaceholder(c.title, Modifier.size(40.dp, 56.dp), c.coverModel)
+                            CoverPlaceholder(title, Modifier.size(40.dp, 56.dp), c.coverModel)
                             SeriesReadStatusOverlay(c, Modifier.align(Alignment.BottomEnd), size = 16.dp)
                             MetadataStatusOverlay(c, Modifier.align(Alignment.BottomStart), size = 16.dp)
                         }
@@ -242,9 +245,11 @@ private fun DetailedLayout(
     selectedIds: Set<String>,
     onClick: (String) -> Unit,
     onLongClick: (String) -> Unit,
+    titleLanguage: TitleLanguage,
 ) {
     LazyColumn(Modifier.fillMaxSize()) {
         items(cards, key = { it.id }) { c ->
+            val title = c.displayTitle(titleLanguage)
             Row(
                 Modifier.fillMaxWidth()
                     .combinedClickable(onClick = { onClick(c.id) }, onLongClick = { onLongClick(c.id) })
@@ -256,13 +261,13 @@ private fun DetailedLayout(
                     Checkbox(checked = c.id in selectedIds, onCheckedChange = { onClick(c.id) })
                 } else {
                     Box {
-                        CoverPlaceholder(c.title, Modifier.size(64.dp, 90.dp), c.coverModel)
+                        CoverPlaceholder(title, Modifier.size(64.dp, 90.dp), c.coverModel)
                         SeriesReadStatusOverlay(c, Modifier.align(Alignment.BottomEnd).padding(2.dp))
                         MetadataStatusOverlay(c, Modifier.align(Alignment.BottomStart).padding(2.dp))
                     }
                 }
                 Column {
-                    Text(c.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     c.author?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     Text("${c.chapterCount} chapters · ${c.unreadCount} unread", style = MaterialTheme.typography.bodySmall)
                 }
@@ -280,6 +285,7 @@ private fun GridLayout(
     selectedIds: Set<String>,
     onClick: (String) -> Unit,
     onLongClick: (String) -> Unit,
+    titleLanguage: TitleLanguage,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(165.dp),
@@ -288,9 +294,10 @@ private fun GridLayout(
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         gridItems(cards, key = { it.id }) { c ->
+            val title = c.displayTitle(titleLanguage)
             Column(Modifier.combinedClickable(onClick = { onClick(c.id) }, onLongClick = { onLongClick(c.id) })) {
                 Box {
-                    CoverPlaceholder(c.title, Modifier.fillMaxWidth().aspectRatio(0.7f), c.coverModel)
+                    CoverPlaceholder(title, Modifier.fillMaxWidth().aspectRatio(0.7f), c.coverModel)
                     SeriesReadStatusOverlay(c, Modifier.align(Alignment.BottomEnd).padding(4.dp))
                     MetadataStatusOverlay(c, Modifier.align(Alignment.BottomStart).padding(4.dp))
                     if (selectionMode) {
@@ -301,7 +308,7 @@ private fun GridLayout(
                         )
                     }
                 }
-                Text(c.title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(title, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
     }

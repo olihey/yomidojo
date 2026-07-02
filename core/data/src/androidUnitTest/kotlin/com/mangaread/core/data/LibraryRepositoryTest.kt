@@ -114,6 +114,9 @@ class LibraryRepositoryTest {
         assertEquals("/covers/a.jpg", enriched?.coverPath)
         assertEquals(1999, enriched?.startYear)
         assertEquals("42", enriched?.externalId)
+        assertEquals("A Romaji", enriched?.titleRomaji)
+        assertEquals("A", enriched?.titleEnglish)
+        assertEquals("A Native", enriched?.titleNative)
 
         // Rescan (same series, later timestamp) must not clobber the applied metadata —
         // upsertSeries's ON CONFLICT deliberately excludes these columns.
@@ -121,6 +124,7 @@ class LibraryRepositoryTest {
         val afterRescan = repo.observeSeries("a").first()
         assertEquals("Jane Author", afterRescan?.author)
         assertEquals("42", afterRescan?.externalId)
+        assertEquals("A Romaji", afterRescan?.titleRomaji)
     }
 
     @Test
@@ -152,6 +156,9 @@ class LibraryRepositoryTest {
     private fun details() = RemoteWorkDetails(
         externalId = "42",
         title = "A",
+        titleRomaji = "A Romaji",
+        titleEnglish = "A",
+        titleNative = "A Native",
         author = "Jane Author",
         description = "A clean description.",
         coverUrl = "https://example.com/a.jpg",

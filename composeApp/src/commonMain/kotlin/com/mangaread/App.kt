@@ -17,6 +17,7 @@ import androidx.navigation.compose.rememberNavController
 fun App(graph: AppGraph, onPickFolder: () -> Unit) {
     val navController = rememberNavController()
     val themeMode by graph.appPreferences.themeMode.collectAsState()
+    val titleLanguage by graph.appPreferences.titleLanguage.collectAsState()
     val darkTheme = when (themeMode) {
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
@@ -30,6 +31,7 @@ fun App(graph: AppGraph, onPickFolder: () -> Unit) {
                     onPickFolder = onPickFolder,
                     onSeriesClick = { seriesId -> navController.navigate("series/$seriesId") },
                     onSettingsClick = { navController.navigate("settings") },
+                    titleLanguage = titleLanguage,
                 )
             }
             composable("settings") {
@@ -51,6 +53,7 @@ fun App(graph: AppGraph, onPickFolder: () -> Unit) {
                     viewModel = viewModel,
                     onBack = { navController.popBackStack() },
                     onChapterClick = { chapterId -> navController.navigate("reader/$seriesId/$chapterId") },
+                    titleLanguage = titleLanguage,
                 )
             }
             composable("reader/{seriesId}/{chapterId}") { entry ->
@@ -84,9 +87,10 @@ private fun ReaderHost(
     val series by remember(seriesId) { graph.repository.observeSeries(seriesId) }.collectAsState(initial = null)
     val chapters by remember(seriesId) { graph.repository.observeChapters(seriesId) }.collectAsState(initial = emptyList())
     val chapter = chapters.find { it.id == chapterId } ?: return
+    val titleLanguage by graph.appPreferences.titleLanguage.collectAsState()
 
     val seriesDirection = series?.readingDirection
-    val title = series?.title ?: ""
+    val title = series?.displayTitle(titleLanguage) ?: ""
     val chapterIndex = chapters.indexOfFirst { it.id == chapterId }
     val nextChapter = if (chapterIndex in 0 until chapters.lastIndex) chapters[chapterIndex + 1] else null
     val viewModel = remember(chapter.id, seriesDirection, title) {
