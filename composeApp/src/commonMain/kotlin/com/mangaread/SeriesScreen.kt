@@ -2,25 +2,35 @@ package com.mangaread
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as lazyItems
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -37,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.mangaread.core.data.ChapterCard
+import com.mangaread.core.metadata.RemoteWork
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,7 +60,12 @@ fun SeriesScreen(
     val chapters by viewModel.chapters.collectAsState()
     val selectionMode by viewModel.selectionMode.collectAsState()
     val selectedIds by viewModel.selectedIds.collectAsState()
+    val metadataSearchOpen by viewModel.metadataSearchOpen.collectAsState()
     val nextUnread = chapters.firstOrNull { !it.completed }
+
+    if (metadataSearchOpen) {
+        FixMetadataDialog(viewModel)
+    }
 
     Scaffold(
         topBar = {
@@ -69,6 +85,9 @@ fun SeriesScreen(
                     title = { Text(series?.title ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     navigationIcon = {
                         IconButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.titleLarge) }
+                    },
+                    actions = {
+                        TextButton(onClick = viewModel::openMetadataSearch) { Text("Fix metadata") }
                     },
                 )
             }
@@ -196,5 +215,74 @@ private fun ReadStatusOverlay(chapter: ChapterCard, modifier: Modifier = Modifie
             color = androidx.compose.ui.graphics.Color.White,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
         )
+    }
+}
+
+/** Fix Metadata (PLAN.md §9.1): an editable, title-prefilled AniList search with a
+ * cover + title + year candidate list — picking one rebinds external_id and re-enriches. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FixMetadataDialog(viewModel: SeriesViewModel) {
+    val query by viewModel.metadataSearchQuery.collectAsState()
+    val results by viewModel.metadataSearchResults.collectAsState()
+    val loading by viewModel.metadataSearchLoading.collectAsState()
+
+    AlertDialog(
+        onDismissRequest = viewModel::dismissMetadataSearch,
+        title = { Text("Fix metadata") },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = viewModel::searchMetadata,
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Title") },
+                )
+                Spacer(Modifier.height(8.dp))
+                Box(Modifier.fillMaxWidth().heightIn(min = 80.dp, max = 320.dp)) {
+                    when {
+                        loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+                        results.isEmpty() -> Text(
+                            "No matches",
+                            Modifier.align(Alignment.Center),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        else -> LazyColumn {
+                            lazyItems(results, key = { it.externalId }) { work ->
+                                MetadataCandidateRow(work, onClick = { viewModel.applyMetadataMatch(work) })
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = viewModel::dismissMetadataSearch) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun MetadataCandidateRow(work: RemoteWork, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(40.dp).height(56.dp).clip(RoundedCornerShape(4.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+            if (work.coverUrl != null) {
+                AsyncImage(
+                    model = work.coverUrl,
+                    contentDescription = work.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize(),
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(work.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            work.startYear?.let { Text(it.toString(), style = MaterialTheme.typography.bodySmall) }
+        }
     }
 }

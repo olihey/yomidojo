@@ -11,6 +11,13 @@ data class LibraryCard(
     val unreadCount: Int,
     val latestChapterAdded: Long,
     val latestRead: Long?,
+    /** AniList `startDate.year`, once matched (PLAN.md §9) — drives the "release start" sort. */
+    val startYear: Int?,
+    /** Non-null once AniList-matched (PLAN.md §9) — drives the library metadata-status badge. */
+    val externalId: String?,
+    /** Set when enrichment ran but found no good-enough match (PLAN.md §9.2) — badge shows "✕"
+     * instead of "?" for a series that's been tried and failed, vs. never queued yet. */
+    val metadataCheckedAt: Long?,
     /**
      * Coil model for the cover. A real cached cover path if present, else a scheme-tagged
      * locator the platform cover fetcher resolves: "cbz:<uri>" (first image in the archive)

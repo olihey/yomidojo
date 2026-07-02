@@ -16,7 +16,9 @@ import kotlinx.coroutines.launch
 
 data class ScanProgress(val seriesFound: Int, val chaptersFound: Int)
 
-enum class SortMode(val label: String) { NAME("Name"), RECENTLY_ADDED("Recently added"), RECENTLY_READ("Recently read") }
+enum class SortMode(val label: String) {
+    NAME("Name"), RECENTLY_ADDED("Recently added"), RECENTLY_READ("Recently read"), RELEASE_START("Release start")
+}
 enum class ViewMode { LIST, GRID, DETAILED }
 
 class LibraryViewModel(
@@ -24,6 +26,7 @@ class LibraryViewModel(
     scanner: LibraryScanner,
     private val source: MangaSource,
     private val prefs: LibraryPreferences,
+    private val enricher: MetadataEnricher,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
     private val syncer = LibrarySyncer(repository, scanner)
@@ -62,6 +65,9 @@ class LibraryViewModel(
                 SortMode.NAME -> compareBy { it.sortTitle }
                 SortMode.RECENTLY_ADDED -> compareBy { it.latestChapterAdded }
                 SortMode.RECENTLY_READ -> compareBy { it.latestRead ?: 0L }
+                // Unmatched series (no AniList start_year yet) sort after all matched ones,
+                // ordered among themselves by date-added (PLAN.md §7.1's specified fallback).
+                SortMode.RELEASE_START -> compareBy({ it.startYear == null }, { it.startYear ?: 0 }, { it.latestChapterAdded })
             }
             list.sortedWith(if (asc) comparator else comparator.reversed())
         }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -130,5 +136,8 @@ class LibraryViewModel(
         } finally {
             _progress.value = null
         }
+        // Fire-and-forget: enrichment is rate-limited and best-effort (PLAN.md §9.2), so it
+        // shouldn't hold up the scan-progress UI or the library screen becoming usable.
+        scope.launch { enricher.enrichPending() }
     }
 }

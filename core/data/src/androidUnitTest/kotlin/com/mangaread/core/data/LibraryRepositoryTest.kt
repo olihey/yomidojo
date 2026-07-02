@@ -5,6 +5,7 @@ import com.mangaread.core.data.db.MangaDatabase
 import com.mangaread.core.domain.Chapter
 import com.mangaread.core.domain.ChapterFormat
 import com.mangaread.core.domain.Series
+import com.mangaread.core.metadata.RemoteWorkDetails
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -89,4 +90,71 @@ class LibraryRepositoryTest {
         repo.saveLocalRoot("content://tree/primary%3AManga", "Manga")
         assertEquals("content://tree/primary%3AManga", repo.savedLocalRoot())
     }
+
+    @Test
+    fun unmatched_series_excludes_ones_with_an_external_id() = runTest {
+        val (repo, _) = newRepo()
+        repo.persistSeries(series("a", "A", 1), emptyList())
+        repo.persistSeries(series("b", "B", 1), emptyList())
+        repo.applyMetadata("b", details(), coverPath = null)
+
+        assertEquals(listOf("a" to "A"), repo.unmatchedSeries())
+    }
+
+    @Test
+    fun apply_metadata_round_trips_and_survives_a_rescan() = runTest {
+        val (repo, _) = newRepo()
+        val s = series("a", "A", 1)
+        repo.persistSeries(s, emptyList())
+        repo.applyMetadata("a", details(), coverPath = "/covers/a.jpg")
+
+        val enriched = repo.observeSeries("a").first()
+        assertEquals("Jane Author", enriched?.author)
+        assertEquals("A clean description.", enriched?.description)
+        assertEquals("/covers/a.jpg", enriched?.coverPath)
+        assertEquals(1999, enriched?.startYear)
+        assertEquals("42", enriched?.externalId)
+
+        // Rescan (same series, later timestamp) must not clobber the applied metadata —
+        // upsertSeries's ON CONFLICT deliberately excludes these columns.
+        repo.persistSeries(s.copy(lastScanned = 2), emptyList())
+        val afterRescan = repo.observeSeries("a").first()
+        assertEquals("Jane Author", afterRescan?.author)
+        assertEquals("42", afterRescan?.externalId)
+    }
+
+    @Test
+    fun unmatched_series_empty_when_none_pending() = runTest {
+        val (repo, _) = newRepo()
+        repo.persistSeries(series("a", "A", 1), emptyList())
+        repo.applyMetadata("a", details(), coverPath = null)
+        assertEquals(emptyList(), repo.unmatchedSeries())
+    }
+
+    @Test
+    fun mark_metadata_checked_shows_up_on_the_library_card_but_series_stays_unmatched() = runTest {
+        val (repo, _) = newRepo()
+        repo.persistSeries(series("a", "A", 1), emptyList())
+
+        val before = repo.observeLibrary().first().single()
+        assertEquals(null, before.externalId)
+        assertEquals(null, before.metadataCheckedAt)
+
+        repo.markMetadataChecked("a")
+
+        val after = repo.observeLibrary().first().single()
+        assertEquals(null, after.externalId, "still unmatched — checking isn't matching")
+        assertEquals(true, after.metadataCheckedAt != null, "but now recorded as checked")
+        // A checked-but-unmatched series is still queued for another attempt later.
+        assertEquals(listOf("a" to "A"), repo.unmatchedSeries())
+    }
+
+    private fun details() = RemoteWorkDetails(
+        externalId = "42",
+        title = "A",
+        author = "Jane Author",
+        description = "A clean description.",
+        coverUrl = "https://example.com/a.jpg",
+        startYear = 1999,
+    )
 }

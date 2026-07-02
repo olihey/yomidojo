@@ -9,6 +9,7 @@ import com.mangaread.core.domain.ReadingDirection
 import com.mangaread.core.domain.Series as DomainSeries
 import com.mangaread.core.domain.ioDispatcher
 import com.mangaread.core.domain.nowEpochMillis
+import com.mangaread.core.metadata.RemoteWorkDetails
 import com.mangaread.core.data.db.Series as SeriesRow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -37,6 +38,9 @@ class LibraryRepository(db: MangaDatabase) {
                     unreadCount = (r.chapter_count - r.read_count).toInt(),
                     latestChapterAdded = r.latest_chapter_added ?: r.date_added,
                     latestRead = r.latest_read,
+                    startYear = r.start_year?.toInt(),
+                    externalId = r.external_id,
+                    metadataCheckedAt = r.metadata_checked_at,
                     coverModel = coverModel(r.cover_path, r.cover_format, r.cover_locator),
                 )
             }
@@ -179,6 +183,35 @@ class LibraryRepository(db: MangaDatabase) {
      */
     suspend fun deleteSeriesNotScannedAt(scannedAt: Long) = withContext(ioDispatcher) {
         q.deleteSeriesNotScannedAt(scannedAt)
+    }
+
+    /** (id, title) pairs still missing an AniList match — the enrichment pipeline's work
+     * queue (PLAN.md §9.2). A one-shot snapshot, not reactive: the pipeline pulls a fresh
+     * batch each pass rather than reacting to every intermediate write mid-run. */
+    suspend fun unmatchedSeries(): List<Pair<String, String>> = withContext(ioDispatcher) {
+        q.selectUnmatchedSeries().executeAsList().map { it.id to it.title }
+    }
+
+    /** Writes AniList-derived fields for one series — used by both the background
+     * enrichment pipeline and the user-facing Fix Metadata re-match (PLAN.md §9, §9.1).
+     * Deliberately its own query, not routed through [persistSeries]/upsertSeries, whose
+     * ON CONFLICT clause leaves these columns untouched on every rescan by design. */
+    suspend fun applyMetadata(seriesId: String, details: RemoteWorkDetails, coverPath: String?) =
+        withContext(ioDispatcher) {
+            q.updateSeriesMetadata(
+                author = details.author,
+                description = details.description,
+                cover_path = coverPath,
+                start_year = details.startYear?.toLong(),
+                external_id = details.externalId,
+                id = seriesId,
+            )
+        }
+
+    /** Stamps that enrichment ran and found nothing good enough (PLAN.md §9.2) — the library
+     * badge shows "✕" for these instead of "?" (never checked yet). */
+    suspend fun markMetadataChecked(seriesId: String) = withContext(ioDispatcher) {
+        q.markMetadataChecked(nowEpochMillis(), seriesId)
     }
 
     private fun coverModel(coverPath: String?, format: String?, locator: String?): String? = when {

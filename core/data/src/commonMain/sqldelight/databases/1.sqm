@@ -1,0 +1,3 @@
+-- v1 -> v2: track whether AniList enrichment has run for a series with no match found yet,
+-- so the library UI can distinguish "not checked yet" from "checked, no match" (PLAN.md §9.2).
+ALTER TABLE series ADD COLUMN metadata_checked_at INTEGER;

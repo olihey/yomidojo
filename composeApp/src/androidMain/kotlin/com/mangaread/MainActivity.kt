@@ -12,6 +12,7 @@ import android.content.Context
 import com.mangaread.core.data.LibraryRepository
 import com.mangaread.core.data.DatabaseDriverFactory
 import com.mangaread.core.data.createMangaDatabase
+import com.mangaread.core.metadata.AniListMetadataProvider
 import com.mangaread.core.scanner.LibraryScanner
 import com.russhwolf.settings.SharedPreferencesSettings
 import coil3.ImageLoader
@@ -19,6 +20,7 @@ import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import coil3.key.Keyer
 import coil3.request.Options
+import io.ktor.client.HttpClient
 import okio.Path.Companion.toOkioPath
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -61,14 +63,21 @@ class MainActivity : ComponentActivity() {
         val prefs = LibraryPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
-        viewModel = LibraryViewModel(repository, scanner, source, prefs)
+        val metadataProvider = AniListMetadataProvider()
+        val coversDir = applicationContext.filesDir.resolve("covers").absolutePath
+        val coverClient = HttpClient()
+        val enricher = MetadataEnricher(repository, metadataProvider, coverClient, coversDir)
+        viewModel = LibraryViewModel(repository, scanner, source, prefs, enricher)
         readerPrefs = ReaderPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
         val appPrefs = AppPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
-        val graph = AppGraph(repository, source, viewModel, readerPrefs, appPrefs)
+        val graph = AppGraph(
+            repository, source, viewModel, readerPrefs, appPrefs,
+            metadataProvider, enricher, coverClient, coversDir,
+        )
 
         pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {

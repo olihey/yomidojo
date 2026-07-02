@@ -5,8 +5,11 @@ import com.mangaread.core.data.LibraryRepository
 import com.mangaread.core.domain.Chapter as DomainChapter
 import com.mangaread.core.domain.ChapterFormat
 import com.mangaread.core.domain.Series as DomainSeries
+import com.mangaread.core.metadata.MetadataProvider
+import com.mangaread.core.metadata.RemoteWork
 import com.mangaread.core.reader.pageProviderFor
 import com.mangaread.core.source.MangaSource
+import io.ktor.client.HttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -24,6 +27,9 @@ class SeriesViewModel(
     private val repository: LibraryRepository,
     private val source: MangaSource,
     val seriesId: String,
+    private val metadataProvider: MetadataProvider,
+    private val coverClient: HttpClient,
+    private val coversDir: String,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
     val series: StateFlow<DomainSeries?> =
@@ -36,6 +42,13 @@ class SeriesViewModel(
     /** Multi-select chapters for bulk read/unread (PLAN.md §7.5). */
     val selectionMode = MutableStateFlow(false)
     val selectedIds = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Fix Metadata (PLAN.md §9.1): a keyword search prefilled with the current title, listing
+     * AniList candidates; picking one rebinds external_id and re-enriches. */
+    val metadataSearchOpen = MutableStateFlow(false)
+    val metadataSearchQuery = MutableStateFlow("")
+    val metadataSearchResults = MutableStateFlow<List<RemoteWork>>(emptyList())
+    val metadataSearchLoading = MutableStateFlow(false)
 
     /** Chapter ids already counted or currently being counted, so [chapters] re-emitting after a
      * write-back doesn't re-trigger the same chapter (PLAN.md §9: covers/counts are on-demand). */
@@ -73,6 +86,50 @@ class SeriesViewModel(
             val nowCompleted = !chapter.completed
             val lastPage = if (nowCompleted) (chapter.pageCount ?: 1) - 1 else 0
             repository.markProgress(chapter.id, lastPage.coerceAtLeast(0), nowCompleted)
+        }
+    }
+
+    fun openMetadataSearch() {
+        metadataSearchQuery.value = series.value?.title ?: ""
+        metadataSearchResults.value = emptyList()
+        metadataSearchOpen.value = true
+        searchMetadata(metadataSearchQuery.value)
+    }
+
+    fun dismissMetadataSearch() {
+        metadataSearchOpen.value = false
+    }
+
+    fun searchMetadata(query: String) {
+        metadataSearchQuery.value = query
+        if (query.isBlank()) { metadataSearchResults.value = emptyList(); return }
+        scope.launch {
+            metadataSearchLoading.value = true
+            try {
+                metadataSearchResults.value = metadataProvider.search(query)
+            } catch (t: Throwable) {
+                metadataSearchResults.value = emptyList()
+            } finally {
+                metadataSearchLoading.value = false
+            }
+        }
+    }
+
+    /** Rebinds external_id and re-enriches from the chosen candidate (PLAN.md §9.1) —
+     * the same fields the background pipeline would have written, just user-confirmed. */
+    fun applyMetadataMatch(work: RemoteWork) {
+        scope.launch {
+            metadataSearchLoading.value = true
+            try {
+                val details = metadataProvider.details(work.externalId)
+                val coverPath = downloadCover(coverClient, coversDir, details.externalId, details.coverUrl)
+                repository.applyMetadata(seriesId, details, coverPath)
+                metadataSearchOpen.value = false
+            } catch (t: Throwable) {
+                // Leave the dialog open with its current results — the user can retry.
+            } finally {
+                metadataSearchLoading.value = false
+            }
         }
     }
 

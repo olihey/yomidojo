@@ -224,6 +224,7 @@ private fun ListLayout(
                         Box {
                             CoverPlaceholder(c.title, Modifier.size(40.dp, 56.dp), c.coverModel)
                             SeriesReadStatusOverlay(c, Modifier.align(Alignment.BottomEnd), size = 16.dp)
+                            MetadataStatusOverlay(c, Modifier.align(Alignment.BottomStart), size = 16.dp)
                         }
                     }
                 },
@@ -257,6 +258,7 @@ private fun DetailedLayout(
                     Box {
                         CoverPlaceholder(c.title, Modifier.size(64.dp, 90.dp), c.coverModel)
                         SeriesReadStatusOverlay(c, Modifier.align(Alignment.BottomEnd).padding(2.dp))
+                        MetadataStatusOverlay(c, Modifier.align(Alignment.BottomStart).padding(2.dp))
                     }
                 }
                 Column {
@@ -290,6 +292,7 @@ private fun GridLayout(
                 Box {
                     CoverPlaceholder(c.title, Modifier.fillMaxWidth().aspectRatio(0.7f), c.coverModel)
                     SeriesReadStatusOverlay(c, Modifier.align(Alignment.BottomEnd).padding(4.dp))
+                    MetadataStatusOverlay(c, Modifier.align(Alignment.BottomStart).padding(4.dp))
                     if (selectionMode) {
                         Checkbox(
                             checked = c.id in selectedIds,
@@ -343,6 +346,28 @@ private fun SeriesReadStatusOverlay(card: LibraryCard, modifier: Modifier = Modi
             color = androidx.compose.ui.graphics.Color.White,
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
         )
+    }
+}
+
+/**
+ * AniList match status (PLAN.md §9.2), opposite corner from [SeriesReadStatusOverlay]: a
+ * matched series (`externalId` set) shows nothing — the common case shouldn't clutter every
+ * cover — "?" means enrichment hasn't reached this series yet, "✕" means it ran and found
+ * nothing good enough (Fix Metadata, §9.1, is the way out of that state).
+ */
+@Composable
+private fun MetadataStatusOverlay(card: LibraryCard, modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 24.dp) {
+    if (card.externalId != null) return
+    val (symbol, color) = if (card.metadataCheckedAt != null) {
+        "✕" to MaterialTheme.colorScheme.error
+    } else {
+        "?" to MaterialTheme.colorScheme.scrim.copy(alpha = 0.7f)
+    }
+    Box(
+        modifier.size(size).clip(RoundedCornerShape(50)).background(color),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(symbol, color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelSmall)
     }
 }
 

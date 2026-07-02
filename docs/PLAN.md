@@ -128,7 +128,8 @@ CREATE TABLE series (
   reading_direction  TEXT,               -- per-series override
   external_id        TEXT,               -- AniList Media id once matched; primary sync key
   date_added         INTEGER NOT NULL,
-  last_scanned       INTEGER
+  last_scanned       INTEGER,
+  metadata_checked_at INTEGER            -- set when enrichment ran but found no match (§9.2)
 );
 
 CREATE TABLE chapter (
@@ -178,6 +179,17 @@ Notes:
   delete a series' chapters/progress on every re-scan. Codegen already targets the 3.24
   dialect; pick (a) or (b) in Phase 1. (A modern Galaxy Tab is API 30+, so dev builds run
   fine in the meantime.)
+- **`verifyMigrations` disabled - a retrofit limitation, not a runtime risk.** `1.sqm` (adding
+  `metadata_checked_at`, Phase 3) is the project's first-ever `.sqm` file - Phases 0-2 only
+  ever changed the schema via direct `Schema.sq` edits + `Schema.create()` on fresh installs.
+  SQLDelight's `verifyMigrations` replays migrations from a truly empty database and needs a
+  full version history to do that; with zero prior migrations it fails on `1.sqm`'s
+  `ALTER TABLE` with "no table found," a false premise (the real, already-populated `series`
+  table obviously exists on every real device). `verifyMigrations.set(false)` in
+  `core/data/build.gradle.kts` (with an inline comment) works around the check; runtime
+  correctness doesn't depend on it - `Schema.migrate()` applies the same `ALTER TABLE` against
+  the real table, confirmed on-device against a live 302-series/12399-chapter library with no
+  data loss. Re-enable once there's a real migration history to verify against.
 
 ---
 
@@ -227,9 +239,14 @@ the defaults above, each flippable.
 
 ### 7.2 Cover progress badge
 
-Lower-right of each cover: **unread** → nothing; **in progress** → ring filled to the
-percentage with the number inside; **finished** → green disc with white check. On grid
+Lower-right of each cover: **unread** -> nothing; **in progress** -> ring filled to the
+percentage with the number inside; **finished** -> green disc with white check. On grid
 and detailed covers it overlays the corner; on the small list cover it trails the row.
+
+**Lower-left of each cover (Phase 3): metadata status.** Mirrors the read-status badge on the
+opposite corner. Not yet checked by the enrichment pipeline -> "?" disc; checked but no AniList
+match found -> "X" disc in the error color; matched (`external_id` set) -> nothing. Wired into
+all three view modes the same way the read-status badge is.
 
 ### 7.3 Series screen (chapter / volume) — navigation push
 
@@ -692,7 +709,7 @@ UI smoke tests (Compose) come later and stay thin; the logic tests above carry t
 | **0 — Scaffold** | Multi-module, DI, SQLDelight (driver + schema), nav/theme, **settings store wiring (multiplatform-settings) + `ioDispatcher` (§13)**; walking skeleton. **Android target only; iOS `actual` stubs kept compiling-on-paper (§12)** | One folder → one series → reader page 1, **on Android** |
 | **1 — Local library** | `LocalFileSource` (SAF/bookmarks) + scanner + parser (vol/ch) + DB; **background scan scheduling (Android WorkManager; iOS manual-only)**; library w/ search, sorts, direction toggle, hide-read, view modes; **recently-added chapters feed** | Scan → series/chapters persist, reconcile, reactive; **parser test corpus passes (§14)** |
 | **2 — Reader + series** | `PageProvider` (incl. `pageSize`/spread detection §8), 4 reading modes, **gesture/polish bundle (§8.1)**, progress; series chapter/volume screen; cover badge; **selection mode + bulk read/unread (§7.5)**; **recently-read sort** | Read image + CBZ; resume; bulk-mark; tap zones + volume keys work — **done** |
-| **3 — Metadata** | AniList enrichment + matching + **rate-limited enrichment pipeline (§9.2)** + **Fix metadata re-search (§9.1)** + cover caching (app-internal, §9) | Real covers/descriptions; re-match fixes wrong matches; release-start sort live |
+| **3 — Metadata** | AniList enrichment + matching + **rate-limited enrichment pipeline (§9.2)** + **Fix metadata re-search (§9.1)** + cover caching (app-internal, §9) | Real covers/descriptions; re-match fixes wrong matches; release-start sort live - done |
 | **4 — Cloud source** | Add OneDrive to *validate the abstraction* + the caching/range shim (incl. CBZ local-temp for non-random-access, §11); responsive + settings polish | A cloud source works without changing scanner/reader |
 | **5 — Read-status sync** | `SyncBackend` over the user's cloud; device-independent keys; LWW merge | Progress/read-state converge across two devices |
 
@@ -711,6 +728,25 @@ reading-mode changes (§8), and an app-wide theme setting (Light/Dark/Follow sys
 like the other prefs classes, since `App()` wraps the whole nav host in `MaterialTheme` above
 where `SettingsScreen` lives and needs the change to propagate back up live, not just on next
 launch) are all in and verified on-device.
+
+**Phase 3 status: done.** `AniListMetadataProvider` (`core/metadata`) implements
+`MetadataProvider` against the public `graphql.anilist.co` endpoint (no auth) with its own
+`Mutex`-serialized rate limiter (2s minimum gap between calls, ~30/min, well under the 90/min
+budget) and 429 back-off (`Retry-After`-aware, exponential otherwise, up to 3 attempts).
+`TitleMatching.bestMatch` fuzzy-matches on a normalized-title Levenshtein ratio (threshold
+0.5, matching §9.1's "imperfect matcher is fine because Fix metadata exists"). `MetadataEnricher`
+(`composeApp`) is the enrichment pipeline: it walks `unmatchedSeries()`, searches, matches,
+downloads the cover to `<filesDir>/covers/<external_id>.jpg` via Okio, and writes back through
+`LibraryRepository.applyMetadata`/`markMetadataChecked` - a series with no good match is stamped
+`metadata_checked_at` so the library badge (§7.2) can tell "not checked yet" from "checked, no
+match" apart. It runs from two trigger points: fire-and-forget after a foreground
+`LibraryViewModel.runScan()`, and awaited inline in the background `ScanWorker` (which now also
+performs the sync itself). "Fix metadata" (§9.1) is a Material3 `AlertDialog` on the series
+screen (`SeriesScreen`/`SeriesViewModel`) - a title-prefilled search box + candidate list, tap to
+rebind. "Release start" is a live library sort (`SortMode.RELEASE_START`, nulls trail, tie-broken
+by `latestChapterAdded`). Verified end-to-end on-device against the real API (search -> match ->
+details -> cover download -> DB write -> UI update) and against the real ~302-series library
+across the schema migration (`1.sqm`, see §5's `verifyMigrations` note) with zero data loss.
 
 **"Recently added chapters" feed** = a library filter/section backed by the
 `chapter.date_added` query, surfaced in Phase 1 (no dedicated screen, no upstream polling).

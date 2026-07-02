@@ -40,12 +40,16 @@ kotlin {
             implementation(libs.multiplatform.settings)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.coil.compose)
+            implementation(libs.ktor.client.core)
+            implementation(libs.okio)
         }
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
             implementation(libs.kotlinx.coroutines.android)
             implementation(libs.androidx.documentfile)
             implementation(libs.androidx.work.runtime)
+            implementation(libs.ktor.client.okhttp)
+            implementation(libs.coil.network.ktor)
         }
     }
 }
