@@ -553,22 +553,27 @@ request at a time, respects a conservative interval (well under 90/min), and **b
 429** (honor `Retry-After`, exponential otherwise). Enrichment is best-effort and resumable —
 a series with no `external_id` yet simply shows file-derived data until its turn comes up.
 
-**Known issue: concurrent scans can wipe applied metadata (found 2026-07-02, not yet fixed).**
+**Fixed: concurrent scans could wipe applied metadata (found and fixed 2026-07-02).**
 `LibrarySyncer.sync()`'s cleanup step, `deleteSeriesNotScannedAt(scanAt)`, deletes any series row
-whose `last_scanned` doesn't match *that* scan's own timestamp. If two `sync()` calls ever overlap
-(observed: the periodic `ScanWorker` job appears to re-trigger an immediate run on every APK
-reinstall during dev, and its execution can overlap a still-running prior instance), each one's
-cleanup can delete rows the other just (re-)inserted with a different `scanAt`, and a
+whose `last_scanned` doesn't match *that* scan's own timestamp. If two `sync()` calls ever
+overlapped (observed: the periodic `ScanWorker` job appears to re-trigger an immediate run on
+every APK reinstall during dev, and its execution can overlap a still-running prior instance),
+each one's cleanup could delete rows the other just (re-)inserted with a different `scanAt`, and a
 deleted-then-reinserted row loses everything `applyMetadata` wrote — `external_id`, author,
 description, cover, the title languages — since a fresh `INSERT` never carries those forward (only
 `upsertSeries`'s `ON CONFLICT` path preserves them). Reproduced on-device: a full round of applied
 matches (108 matched + 79 checked-no-match) was wiped back to 0/0 between two checks ~15 minutes
-apart, with no user action in between. The actual library (series/chapter files) was unaffected —
-only the AniList-derived columns were lost, and they self-heal as enrichment reruns. Not yet fixed;
-a real fix needs either a process-wide lock around `sync()` (so at most one scan runs at a time) or
-making `deleteSeriesNotScannedAt` scoped more carefully than "not stamped with this exact
-timestamp." Flagged here rather than fixed immediately since it doesn't touch user-visible reading
-progress and self-heals; revisit before this matters for a non-dev install.
+apart, with no user action in between. The actual library (series/chapter files) was never
+affected — only the AniList-derived columns were lost, and they self-heal as enrichment reruns.
+**Fix:** `libraryWriteMutex` (`LibraryWriteLock.kt`), a single process-wide `Mutex`, now wraps the
+full body of both `LibrarySyncer.sync()` and `MetadataEnricher.enrichPending()` — at most one of
+either can run at a time app-wide, regardless of which entry point (foreground rescan, folder-pick,
+or the background `ScanWorker`) triggered it; a second caller just waits its turn instead of
+racing. Sufficient because both entry points run in the same app process (confirmed via `adb shell
+ps` while reproducing the bug — WorkManager doesn't use a separate process here). Verified on-device
+by deliberately forcing an overlap (tapping Re-scan, then `adb shell cmd jobscheduler run -f` on the
+periodic job in the same instant): previously matched/checked counts (151/124) were unchanged
+after both runs completed, where before the fix the equivalent scenario reset everything to 0/0.
 
 ### 9.1 Fix metadata (user-facing re-match)
 
@@ -839,9 +844,9 @@ no source changes. If adding PDF needs the reader or DB to change, a seam leaked
 - **iOS sandbox + bookmarks** — get right in Phase 1.
 - **Memory on tall webtoon images** — tile, don't decode whole.
 - **AniList etiquette** — per-device calls, caching, User-Agent, 429 back-off.
-- **Concurrent scans can wipe applied metadata** — known, not yet fixed; see §9.2's "Known issue"
-  note. Overlapping `LibrarySyncer.sync()` calls race on `deleteSeriesNotScannedAt`, and the loser's
-  rows get deleted-then-reinserted with their AniList matches gone.
+- **Concurrent scans could wipe applied metadata** — fixed via `libraryWriteMutex`; see §9.2's
+  "Fixed" note. Overlapping `LibrarySyncer.sync()` calls used to race on
+  `deleteSeriesNotScannedAt`, deleting-then-reinserting rows and losing their AniList matches.
 
 ---
 

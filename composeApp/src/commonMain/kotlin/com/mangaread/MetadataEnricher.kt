@@ -4,6 +4,7 @@ import com.mangaread.core.data.LibraryRepository
 import com.mangaread.core.metadata.MetadataProvider
 import com.mangaread.core.metadata.bestMatch
 import io.ktor.client.HttpClient
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Background AniList enrichment (PLAN.md §9.2): dequeues series still missing an
@@ -19,7 +20,9 @@ class MetadataEnricher(
     private val coverClient: HttpClient,
     private val coversDir: String,
 ) {
-    suspend fun enrichPending() {
+    /** Serialized via [libraryWriteMutex] — see its doc for why this can't overlap a scan
+     * (or another enrichment pass) touching the same database. */
+    suspend fun enrichPending() = libraryWriteMutex.withLock {
         for ((seriesId, rawTitle) in repository.unmatchedSeries()) {
             try {
                 val query = cleanSearchQuery(rawTitle)

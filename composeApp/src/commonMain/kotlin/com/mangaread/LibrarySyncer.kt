@@ -3,6 +3,7 @@ package com.mangaread
 import com.mangaread.core.data.LibraryRepository
 import com.mangaread.core.domain.nowEpochMillis
 import com.mangaread.core.scanner.LibraryScanner
+import kotlinx.coroutines.sync.withLock
 
 /**
  * One scan pipeline shared by the foreground UI and the background worker: scan → persist each
@@ -15,8 +16,9 @@ class LibrarySyncer(
     private val repository: LibraryRepository,
     private val scanner: LibraryScanner,
 ) {
-    /** Runs a full scan of [rootLocator]. [onProgress] is (seriesFound, chaptersFound). */
-    suspend fun sync(rootLocator: String, onProgress: (Int, Int) -> Unit = { _, _ -> }) {
+    /** Runs a full scan of [rootLocator]. [onProgress] is (seriesFound, chaptersFound).
+     * Serialized via [libraryWriteMutex] — see its doc for why overlapping scans are unsafe. */
+    suspend fun sync(rootLocator: String, onProgress: (Int, Int) -> Unit = { _, _ -> }) = libraryWriteMutex.withLock {
         val scanAt = nowEpochMillis()
         var series = 0
         var chapters = 0
