@@ -504,11 +504,10 @@ private fun SeriesReadStatusOverlay(card: LibraryCard, modifier: Modifier = Modi
 @Composable
 private fun MetadataStatusOverlay(card: LibraryCard, modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 24.dp) {
     if (card.externalId != null) return
-    val (symbol, color) = if (card.metadataCheckedAt != null) {
-        "✕" to MaterialTheme.colorScheme.error
-    } else {
-        "?" to MaterialTheme.colorScheme.scrim.copy(alpha = 0.7f)
-    }
+    // Unmatched (never checked, or checked with no good candidate) — both read as "needs
+    // attention", so both use the same red as the status row's Cancelled dot (StatusRow.kt).
+    val symbol = if (card.metadataCheckedAt != null) "✕" else "?"
+    val color = androidx.compose.ui.graphics.Color(0xFFF44336)
     Box(
         modifier.size(size).clip(RoundedCornerShape(50)).background(color),
         contentAlignment = Alignment.Center,
