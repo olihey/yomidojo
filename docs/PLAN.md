@@ -553,6 +553,23 @@ request at a time, respects a conservative interval (well under 90/min), and **b
 429** (honor `Retry-After`, exponential otherwise). Enrichment is best-effort and resumable —
 a series with no `external_id` yet simply shows file-derived data until its turn comes up.
 
+**Known issue: concurrent scans can wipe applied metadata (found 2026-07-02, not yet fixed).**
+`LibrarySyncer.sync()`'s cleanup step, `deleteSeriesNotScannedAt(scanAt)`, deletes any series row
+whose `last_scanned` doesn't match *that* scan's own timestamp. If two `sync()` calls ever overlap
+(observed: the periodic `ScanWorker` job appears to re-trigger an immediate run on every APK
+reinstall during dev, and its execution can overlap a still-running prior instance), each one's
+cleanup can delete rows the other just (re-)inserted with a different `scanAt`, and a
+deleted-then-reinserted row loses everything `applyMetadata` wrote — `external_id`, author,
+description, cover, the title languages — since a fresh `INSERT` never carries those forward (only
+`upsertSeries`'s `ON CONFLICT` path preserves them). Reproduced on-device: a full round of applied
+matches (108 matched + 79 checked-no-match) was wiped back to 0/0 between two checks ~15 minutes
+apart, with no user action in between. The actual library (series/chapter files) was unaffected —
+only the AniList-derived columns were lost, and they self-heal as enrichment reruns. Not yet fixed;
+a real fix needs either a process-wide lock around `sync()` (so at most one scan runs at a time) or
+making `deleteSeriesNotScannedAt` scoped more carefully than "not stamped with this exact
+timestamp." Flagged here rather than fixed immediately since it doesn't touch user-visible reading
+progress and self-heals; revisit before this matters for a non-dev install.
+
 ### 9.1 Fix metadata (user-facing re-match)
 
 On the series screen, a **Fix metadata** action handles wrong auto-matches: it opens a
@@ -768,6 +785,17 @@ rather than the frozen `sort_title` column (still the sync fallback key, §10, j
 Name-sorts by), confirmed on-device by watching a re-matched series jump from its file-name's
 alphabetical slot to its AniList-Romaji slot when the setting changed.
 
+**"Fetching metadata..." indicator.** The library top bar previously went silent as soon as a
+scan finished, even though `enrichPending()` (§9.2) kept making real AniList calls well after
+that — there was no way to tell it was still working. `LibraryViewModel.enriching` (a
+`StateFlow<Boolean>`, set for the duration of the `runScan`-triggered `enrichPending()` call) now
+drives a second title-bar state in `LibraryScreen` (spinner + "Fetching metadata...", same visual
+language as the "Scanning..." state) and hides the "Re-scan" action while it's active, so a second
+scan can't be started on top of an enrichment pass already running. Verified on-device: triggering
+Re-scan showed "Scanning..." through the file walk, then correctly handed off to "Fetching
+metadata..." until the pass finished. Foreground-triggered only — the periodic background
+`ScanWorker` run has no UI to show an indicator in regardless.
+
 **"Recently added chapters" feed** = a library filter/section backed by the
 `chapter.date_added` query, surfaced in Phase 1 (no dedicated screen, no upstream polling).
 
@@ -811,6 +839,9 @@ no source changes. If adding PDF needs the reader or DB to change, a seam leaked
 - **iOS sandbox + bookmarks** — get right in Phase 1.
 - **Memory on tall webtoon images** — tile, don't decode whole.
 - **AniList etiquette** — per-device calls, caching, User-Agent, 429 back-off.
+- **Concurrent scans can wipe applied metadata** — known, not yet fixed; see §9.2's "Known issue"
+  note. Overlapping `LibrarySyncer.sync()` calls race on `deleteSeriesNotScannedAt`, and the loser's
+  rows get deleted-then-reinserted with their AniList matches gone.
 
 ---
 

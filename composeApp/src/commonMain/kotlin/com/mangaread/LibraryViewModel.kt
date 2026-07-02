@@ -39,6 +39,12 @@ class LibraryViewModel(
     private val _canRescan = MutableStateFlow(false)
     val canRescan: StateFlow<Boolean> = _canRescan
 
+    /** True while the AniList enrichment pass kicked off by [runScan] is still working through
+     * [MetadataEnricher.enrichPending] (PLAN.md §9.2) — separate from [progress] since enrichment
+     * keeps running well after the scan itself (and its progress UI) finishes. */
+    private val _enriching = MutableStateFlow(false)
+    val enriching: StateFlow<Boolean> = _enriching
+
     /** True when a library root is saved but its SAF permission was lost (PLAN.md §12). */
     private val _needsReGrant = MutableStateFlow(false)
     val needsReGrant: StateFlow<Boolean> = _needsReGrant
@@ -151,7 +157,15 @@ class LibraryViewModel(
             _progress.value = null
         }
         // Fire-and-forget: enrichment is rate-limited and best-effort (PLAN.md §9.2), so it
-        // shouldn't hold up the scan-progress UI or the library screen becoming usable.
-        scope.launch { enricher.enrichPending() }
+        // shouldn't hold up the scan-progress UI or the library screen becoming usable. Its own
+        // [_enriching] flag lets the UI show it's still fetching well after the scan is done.
+        scope.launch {
+            _enriching.value = true
+            try {
+                enricher.enrichPending()
+            } finally {
+                _enriching.value = false
+            }
+        }
     }
 }
