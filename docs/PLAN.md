@@ -762,7 +762,11 @@ screens display - `LibraryCard.displayTitle(language)` / `Series.displayTitle(la
 available for that match, or the series isn't matched at all. Default is `FILE`, so existing
 behavior is unchanged until a user opts in. Verified on-device: re-matching a series and switching
 the setting to AniList - Romaji correctly retitled that series everywhere it's shown, while every
-other still-unmatched series kept showing its file name.
+other still-unmatched series kept showing its file name. The library's "Name" sort follows the
+same setting - `LibraryViewModel.cards` sorts by `normalizeSortTitle(card.displayTitle(language))`
+rather than the frozen `sort_title` column (still the sync fallback key, §10, just no longer what
+Name-sorts by), confirmed on-device by watching a re-matched series jump from its file-name's
+alphabetical slot to its AniList-Romaji slot when the setting changed.
 
 **"Recently added chapters" feed** = a library filter/section backed by the
 `chapter.date_added` query, surfaced in Phase 1 (no dedicated screen, no upstream polling).

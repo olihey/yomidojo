@@ -67,11 +67,11 @@ class MainActivity : ComponentActivity() {
         val coversDir = applicationContext.filesDir.resolve("covers").absolutePath
         val coverClient = HttpClient()
         val enricher = MetadataEnricher(repository, metadataProvider, coverClient, coversDir)
-        viewModel = LibraryViewModel(repository, scanner, source, prefs, enricher)
-        readerPrefs = ReaderPreferences(
+        val appPrefs = AppPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
-        val appPrefs = AppPreferences(
+        viewModel = LibraryViewModel(repository, scanner, source, prefs, enricher, appPrefs)
+        readerPrefs = ReaderPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
         val graph = AppGraph(

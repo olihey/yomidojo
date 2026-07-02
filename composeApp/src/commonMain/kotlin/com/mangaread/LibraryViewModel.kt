@@ -2,6 +2,7 @@ package com.mangaread
 
 import com.mangaread.core.data.LibraryCard
 import com.mangaread.core.data.LibraryRepository
+import com.mangaread.core.domain.normalizeSortTitle
 import com.mangaread.core.scanner.LibraryScanner
 import com.mangaread.core.source.MangaSource
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +28,7 @@ class LibraryViewModel(
     private val source: MangaSource,
     private val prefs: LibraryPreferences,
     private val enricher: MetadataEnricher,
+    private val appPreferences: AppPreferences,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
     private val syncer = LibrarySyncer(repository, scanner)
@@ -56,21 +58,33 @@ class LibraryViewModel(
     private val allCards: StateFlow<List<LibraryCard>> =
         repository.observeLibrary().stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    private data class FilterInputs(
+        val cards: List<LibraryCard>,
+        val query: String,
+        val sortMode: SortMode,
+        val ascending: Boolean,
+        val unreadOnly: Boolean,
+    )
+
     val cards: StateFlow<List<LibraryCard>> =
-        combine(allCards, query, sort, ascending, unreadOnly) { cards, q, sortMode, asc, unread ->
-            var list = cards
-            if (q.isNotBlank()) list = list.filter { it.title.contains(q, ignoreCase = true) }
-            if (unread) list = list.filter { it.unreadCount > 0 }
-            val comparator: Comparator<LibraryCard> = when (sortMode) {
-                SortMode.NAME -> compareBy { it.sortTitle }
-                SortMode.RECENTLY_ADDED -> compareBy { it.latestChapterAdded }
-                SortMode.RECENTLY_READ -> compareBy { it.latestRead ?: 0L }
-                // Unmatched series (no AniList start_year yet) sort after all matched ones,
-                // ordered among themselves by date-added (PLAN.md §7.1's specified fallback).
-                SortMode.RELEASE_START -> compareBy({ it.startYear == null }, { it.startYear ?: 0 }, { it.latestChapterAdded })
-            }
-            list.sortedWith(if (asc) comparator else comparator.reversed())
-        }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        combine(allCards, query, sort, ascending, unreadOnly, ::FilterInputs)
+            .combine(appPreferences.titleLanguage) { inputs, titleLanguage ->
+                var list = inputs.cards
+                if (inputs.query.isNotBlank()) list = list.filter { it.title.contains(inputs.query, ignoreCase = true) }
+                if (inputs.unreadOnly) list = list.filter { it.unreadCount > 0 }
+                val comparator: Comparator<LibraryCard> = when (inputs.sortMode) {
+                    // Sorts by whichever title is currently displayed (PLAN.md §9), not always
+                    // the file name — normalized the same way `sort_title` is (§10) so ordering
+                    // stays locale/punctuation-insensitive regardless of which title is active.
+                    SortMode.NAME -> compareBy { normalizeSortTitle(it.displayTitle(titleLanguage)) }
+                    SortMode.RECENTLY_ADDED -> compareBy { it.latestChapterAdded }
+                    SortMode.RECENTLY_READ -> compareBy { it.latestRead ?: 0L }
+                    // Unmatched series (no AniList start_year yet) sort after all matched ones,
+                    // ordered among themselves by date-added (PLAN.md §7.1's specified fallback).
+                    SortMode.RELEASE_START -> compareBy({ it.startYear == null }, { it.startYear ?: 0 }, { it.latestChapterAdded })
+                }
+                list.sortedWith(if (inputs.ascending) comparator else comparator.reversed())
+            }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
         scope.launch {
