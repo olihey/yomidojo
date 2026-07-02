@@ -129,7 +129,7 @@ UPDATE series SET metadata_checked_at = ? WHERE id = ?;
 -- Library cards: each series with chapter count, read count, and newest chapter time.
 selectLibrary:
 SELECT
-  s.id, s.title, s.sort_title, s.author, s.cover_path, s.start_year, s.date_added,
+  s.id, s.title, s.sort_title, s.author, s.cover_path, s.start_year, s.status, s.date_added,
   s.external_id, s.metadata_checked_at, s.title_romaji, s.title_english, s.title_native,
   COUNT(DISTINCT c.id) AS chapter_count,
   COUNT(DISTINCT CASE WHEN p.completed = 1 THEN c.id END) AS read_count,

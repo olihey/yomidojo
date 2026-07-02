@@ -13,6 +13,9 @@ data class LibraryCard(
     val latestRead: Long?,
     /** AniList `startDate.year`, once matched (PLAN.md §9) — drives the "release start" sort. */
     val startYear: Int?,
+    /** AniList MediaStatus: FINISHED, RELEASING, ... (PLAN.md §9) — same field as `Series.status`,
+     * shown as the same colored-dot badge in the detailed library layout as on the series header. */
+    val status: String?,
     /** Non-null once AniList-matched (PLAN.md §9) — drives the library metadata-status badge. */
     val externalId: String?,
     /** Set when enrichment ran but found no good-enough match (PLAN.md §9.2) — badge shows "✕"

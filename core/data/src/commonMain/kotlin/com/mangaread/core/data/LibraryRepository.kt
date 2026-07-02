@@ -39,6 +39,7 @@ class LibraryRepository(db: MangaDatabase) {
                     latestChapterAdded = r.latest_chapter_added ?: r.date_added,
                     latestRead = r.latest_read,
                     startYear = r.start_year?.toInt(),
+                    status = r.status,
                     externalId = r.external_id,
                     metadataCheckedAt = r.metadata_checked_at,
                     titleRomaji = r.title_romaji,

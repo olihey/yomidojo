@@ -396,6 +396,7 @@ private fun DetailedLayout(
                     Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     c.author?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     Text("${c.chapterCount} chapters · ${c.unreadCount} unread", style = MaterialTheme.typography.bodySmall)
+                    StatusRow(c.status, c.startYear, Modifier.padding(top = 2.dp))
                 }
             }
             HorizontalDivider()

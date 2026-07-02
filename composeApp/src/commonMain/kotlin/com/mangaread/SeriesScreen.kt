@@ -206,7 +206,7 @@ private fun SeriesHeader(
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                SeriesStatusRow(series.status, series.startYear)
+                StatusRow(series.status, series.startYear)
             }
             Spacer(Modifier.width(coverGap))
             Column(Modifier.weight(1f).padding(top = overlap)) {
@@ -257,41 +257,6 @@ private fun Modifier.overlapAbove(overlap: Dp): Modifier = layout { measurable, 
     layout(placeable.width, placeable.height - overlapPx) {
         placeable.placeRelative(0, -overlapPx)
     }
-}
-
-/** Release year + AniList status (§9) as a colored dot + label, e.g. "2021 · ● Releasing" —
- * sits directly under the cover image, so it wraps rather than truncates if the cover is
- * narrower than the content (the genre list, which needs more room, lives beside the title
- * instead). */
-@Composable
-private fun SeriesStatusRow(status: String?, startYear: Int?) {
-    val presentation = statusPresentation(status)
-    if (presentation == null && startYear == null) return
-    val dotColor = MaterialTheme.colorScheme.onSurfaceVariant
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        startYear?.let {
-            Text(it.toString(), style = MaterialTheme.typography.bodySmall, color = dotColor)
-            if (presentation != null) {
-                Text("   •   ", style = MaterialTheme.typography.bodySmall, color = dotColor)
-            }
-        }
-        presentation?.let { (label, color) ->
-            Text("●", color = color, style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.width(4.dp))
-            Text(label, color = color, style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-
-/** AniList `MediaStatus` -> (display label, color). Null for an unmatched series or a status
- * value AniList hasn't documented (future-proofing rather than crashing on an unknown enum). */
-private fun statusPresentation(status: String?): Pair<String, Color>? = when (status) {
-    "FINISHED" -> "Finished" to Color(0xFF4CAF50)
-    "RELEASING" -> "Releasing" to Color(0xFF2196F3)
-    "NOT_YET_RELEASED" -> "Not yet released" to Color(0xFFFF9800)
-    "CANCELLED" -> "Cancelled" to Color(0xFFF44336)
-    "HIATUS" -> "Hiatus" to Color(0xFFFFC107)
-    else -> null
 }
 
 @OptIn(ExperimentalFoundationApi::class)
