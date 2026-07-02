@@ -8,8 +8,10 @@ enum class ReadingMode { PAGED_LTR, PAGED_RTL, VERTICAL_PAGED, VERTICAL_CONTINUO
 
 enum class ReadingDirection { LTR, RTL }
 
-/** Optional source capabilities (PLAN.md §6) — promise only what the weakest backend has. */
-enum class SourceCapability { RANDOM_ACCESS, DELTA_SYNC, WATCH }
+/** Optional source capabilities (PLAN.md §6) — promise only what the weakest backend has.
+ * RANGE_READ means seeking within a file is cheap enough that a reader shouldn't download
+ * the whole thing up front (PLAN.md §6.1/§11) — true for SMB, not worth it for local SAF. */
+enum class SourceCapability { RANDOM_ACCESS, DELTA_SYNC, WATCH, RANGE_READ }
 
 data class Source(
     val id: String,

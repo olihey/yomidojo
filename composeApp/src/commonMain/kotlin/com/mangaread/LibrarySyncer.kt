@@ -20,6 +20,7 @@ class LibrarySyncer(
      * Serialized via [libraryWriteMutex] — see its doc for why overlapping scans are unsafe. */
     suspend fun sync(rootLocator: String, onProgress: (Int, Int) -> Unit = { _, _ -> }) = libraryWriteMutex.withLock {
         val scanAt = nowEpochMillis()
+        val previousCount = repository.seriesCount()
         var series = 0
         var chapters = 0
         scanner.scan(rootLocator, scanAt).collect { scanned ->
@@ -28,7 +29,15 @@ class LibrarySyncer(
             chapters += scanned.chapters.size
             onProgress(series, chapters)
         }
-        // Only after a successful, complete scan — prune removed series/chapters.
-        repository.deleteSeriesNotScannedAt(scanAt)
+        // Only after a successful, complete scan — prune removed series/chapters. But a scan
+        // that comes back with far fewer series than the library already has is more likely an
+        // incomplete directory listing (e.g. an SMB share dropping the connection mid-enumerate,
+        // reproduced 2026-07-02) than a real mass-deletion, so skip pruning rather than risk
+        // wiping real data — a later, fuller scan will still catch up and prune correctly.
+        if (previousCount == 0L || series >= previousCount / 2) {
+            repository.deleteSeriesNotScannedAt(scanAt)
+        } else {
+            println("LibrarySyncer: skipping prune — this scan found $series series vs $previousCount already in the library")
+        }
     }
 }

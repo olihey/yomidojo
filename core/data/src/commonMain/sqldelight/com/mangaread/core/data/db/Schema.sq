@@ -177,6 +177,11 @@ DELETE FROM chapter WHERE series_id = ? AND id NOT IN ?;
 deleteSeriesNotScannedAt:
 DELETE FROM series WHERE last_scanned IS NULL OR last_scanned != ?;
 
+-- Sanity-check size before pruning (LibrarySyncer guards against an incomplete scan wiping
+-- the library, PLAN.md §9.2).
+selectSeriesCount:
+SELECT COUNT(*) FROM series;
+
 upsertProgress:
 INSERT INTO reading_progress(chapter_id, last_page_index, completed, updated_at, device_id)
 VALUES (?, ?, ?, ?, ?)

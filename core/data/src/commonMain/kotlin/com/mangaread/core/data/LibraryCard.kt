@@ -42,6 +42,7 @@ data class ChapterCard(
     val volume: Double?,
     val number: Double?,
     val pageCount: Int?,
+    val size: Long?,
     val lastPageIndex: Int,
     val completed: Boolean,
     /** Live-extracted cover via the scheme-tagged locator fallback (§9); generated on demand. */

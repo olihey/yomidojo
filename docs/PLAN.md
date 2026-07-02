@@ -312,6 +312,98 @@ render and turn correctly → force-close and relaunch → library persists and 
 automatically without re-prompting, all through several incidental app crashes along the
 way (each fixed in turn per above) without losing the scanned library or its SMB config.
 
+### 6.2 CBZ range reads over SMB (fixed 2026-07-02)
+
+Opening a CBZ chapter over SMB was very slow, independent of the OOM case above — because
+`CbzPageProvider` (§9/§11's "buffers a whole chapter into memory" design) downloaded the
+**entire chapter** before showing page 1, even for a modest 10-20MB chapter. Fine for local
+SAF (cheap to read fully), bad for a WAN link where that download dominates open time.
+
+**Fix:** `CbzPageProvider` now has two backings, chosen by [fileSize != null &&
+`SourceCapability.RANGE_READ` in source.capabilities]:
+- `InMemoryBacking` (unchanged): whole-file buffer + central-directory parse, for local SAF.
+- `RangedBacking` (new): only reads the ZIP central directory (two small positional
+  reads — a tail window to find the End-Of-Central-Directory record, then the exact
+  central-directory range it points at) plus each page's own bytes, on demand, as the
+  reader actually requests them. Backed by a new `MangaSource.openRandomAccess(locator):
+  RandomAccessHandle` (default: buffer-the-whole-thing, so any source can call it safely;
+  `SmbMangaSource` overrides it with a real smbj positional read against one open file
+  handle kept alive for the provider's lifetime — avoids paying a fresh SMB2 Create/Close
+  round-trip per range). New capability `SourceCapability.RANGE_READ`, declared only by
+  `SmbMangaSource` (not SAF, where whole-file buffering is already fast).
+
+**Two real bugs found wiring this up, both silent data gaps rather than compile errors:**
+1. **`ChapterCard` never carried the file's `size` at all** — `ReaderViewModel`/
+   `SeriesViewModel` construct their own `DomainChapter` from a `ChapterCard` to call
+   `pageProviderFor`, and neither `ChapterCard` (`core:data`) nor those two constructors
+   set `size`, even though the SQL row (`c.*`) already had it. Without it, `create()` had
+   no way to know where to start the EOCD search, so it silently fell back to
+   `InMemoryBacking` for every SMB chapter — including the ~343MB one from §6.1, which
+   then hit the *exact* `OutOfMemoryError` this feature exists to avoid. Fixed by adding
+   `size` to `ChapterCard` and threading it through both call sites.
+2. **`ConfigurableMangaSource` (the live-swappable source wrapper, §6.1) forwards every
+   `MangaSource` method by hand and had no override for the new `openRandomAccess`** — a
+   call through it silently resolved to the *interface's default* (whole-file-buffer)
+   implementation instead of the real `SmbMangaSource` override, since Kotlin doesn't
+   auto-forward default methods through manual per-method delegation. Same OOM crash,
+   traced to `MangaSource$DefaultImpls.openRandomAccess` in the stack trace rather than
+   `CbzPageProvider`'s in-memory path. Fixed by adding the explicit override.
+
+**Verified on-device:** a typical chapter (library average ~12MB; most chapters are
+individual releases under 20MB, not full tankobons) now opens in a few seconds instead of
+downloading the whole file first. The library's single largest known outlier — the same
+~343MB/196-page CBZ from §6.1 — opens successfully (no more OOM) but still takes ~140s,
+because `ReaderViewModel.init` precomputes every page's aspect ratio up front via
+sequential `pageSize()` calls, i.e. one positional-read round-trip per page before the
+reader shows anything; this is a real remaining bottleneck for unusually large chapters,
+not something this fix addresses. Parallelizing those reads was considered and deferred —
+smbj's thread-safety for concurrent reads on one shared file handle wasn't verified with
+enough confidence to risk it, and the common case (small/medium chapters) is already fixed.
+
+**Follow-up found while adding page preload: the *actual* on-screen page renderer had its own,
+separate, worse version of the same problem.** §6.2 above only fixed `CbzPageProvider`
+(page-count/aspect-ratio probing) — real page rendering goes through Coil's
+`AsyncImage(MangaPage(...))` + `PageFetcher` (composeApp), a deliberately separate path (§9,
+§11) that had never been touched. `PageFetcher.cbzImageAt()` did **two full sequential
+`ZipInputStream` passes over the whole archive from byte zero** per page request — one to
+enumerate entry names, one to re-find and decompress the target — reopening the connection
+each time. Over SMB this meant every single page turn re-streamed almost the entire chapter,
+twice, independent of chapter size; this (not the aspect-ratio precompute) was the actual
+per-page-turn slowness.
+
+**Fix:** extracted the central-directory parsing + range-read logic out of `CbzPageProvider`
+into a new public `CbzArchive` (`core:reader`), shared by both `CbzPageProvider` and
+`PageFetcher`. `MangaPage` gained a `size: Long?` field (from `ChapterCard.size`, threaded
+through `ReaderPage`/`WebtoonPage` in `ReaderScreen.kt`) so `PageFetcher` can pick the same
+ranged strategy. A new `PageFetcher.Factory`-scoped `CbzArchiveCache` (`composeApp`) keeps up
+to 2 `CbzArchive`s open across page fetches — reading forward in a chapter no longer reopens
+the archive (and, for SMB, a fresh file handle) on every page — with all access serialized
+through one `Mutex` rather than per-archive, since this is a latency-bound workload already
+and smbj's concurrent-read safety on one shared handle still isn't something to rely on.
+
+**Preload:** `HorizontalPager`/`VerticalPager` in `ReaderScreen.kt` now set
+`beyondViewportPageCount = 1`, so the next (and previous) page's `AsyncImage` composes — and
+its Coil fetch starts — before the user swipes to it, instead of only on arrival. Combined
+with the archive cache above, the prefetch fetch and the eventual real display share the same
+already-open archive rather than each paying their own reopen cost.
+
+**Follow-up: skip the aspect-ratio precompute entirely when `ComicInfo.xml` already has it.**
+The remaining ~140s-for-196-pages cost above is `ReaderViewModel.init` calling `pageSize()`
+once per page, each a real network round-trip when nothing cheaper is available. `ComicInfo.xml`
+(an optional CBZ sidecar written by taggers like ComicTagger/Kavita/Komga) can carry a `<Pages>`
+list with `ImageWidth`/`ImageHeight` per page — reading that one small file replaces the whole
+per-page probe. **Verified against real files in this library before implementing** (temporary
+on-device logging, not assumed): a properly-tagged webcomic chapter had a complete `<Pages>`
+list for all 35 pages; the exact ~343MB/196-page outlier from above had no `ComicInfo.xml` at
+all (a raw scanlation release) — confirming this helps a real subset of the library but can't
+replace the fallback. `CbzArchive.open()` now looks for `ComicInfo.xml` alongside the normal
+central-directory parse and, only if every page ends up with a valid width and height, uses it
+for `CbzPageProvider.pageSize()` instead of decoding page bytes; any gap (file missing, `Page`
+entries incomplete/malformed, count mismatch) discards the whole thing and falls back to
+today's per-page decode exactly as before — no partial trust. Verified on-device: the tagged
+35-page chapter now opens in under 3 seconds (down from the network-bound per-page probe);
+the untagged 343MB chapter still opens correctly via the fallback (unchanged, still ~140s).
+
 ---
 
 ## 7. Library & series UX
@@ -711,6 +803,23 @@ by deliberately forcing an overlap (tapping Re-scan, then `adb shell cmd jobsche
 periodic job in the same instant): previously matched/checked counts (151/124) were unchanged
 after both runs completed, where before the fix the equivalent scenario reset everything to 0/0.
 
+**Fixed: a single incomplete scan could still wipe the library (found and fixed 2026-07-02, after
+the fix above).** With `libraryWriteMutex` already in place, the SMB-backed library (§6.1) dropped
+from a verified 303 series down to 19 after the periodic `ScanWorker` ran on its own (no
+overlapping scan — confirmed via `logcat`, only one run at the time it happened). Since
+`deleteSeriesNotScannedAt` only ever runs after `LibrarySyncer.sync()`'s `collect` completes
+*without throwing*, the cause wasn't a crash mid-scan — it was a single top-level `source.list()`
+call over the SMB/WAN link returning a short, incomplete-but-not-erroring directory listing, which
+`sync()` then trusted as "the real current state" and pruned everything else against. Re-running
+the exact same connect-and-scan cleanly recovered all 303 series / 12406 chapters, confirming nothing
+was permanently lost and the listing itself is normally reliable — this was a transient hiccup, not
+a systemic bug in the scan logic. **Fix:** `LibrarySyncer.sync()` now reads `repository.seriesCount()`
+before scanning and skips the prune (logging instead) if the new pass found fewer than half as many
+series as the library already had — favoring a temporarily-stale library over risking a
+near-total wipe from one bad listing. A later, fuller scan still prunes normally once it agrees
+with reality. Only guards the top-level count, not partial per-series corruption — an acceptable
+trade for how cheap and containment-focused the check is.
+
 ### 9.1 Fix metadata (user-facing re-match)
 
 On the series screen, a **Fix metadata** action handles wrong auto-matches: it opens a
@@ -1008,7 +1117,12 @@ no source changes. If adding PDF needs the reader or DB to change, a seam leaked
 - **`CbzPageProvider` buffers a whole chapter into memory** (§9, §6.1) — fine up to the
   assumed "50MB worst-case CBZ" (§13), but a real ~343MB scan volume hit `OutOfMemoryError`
   even with `android:largeHeap="true"`. Not CBZ-source-specific; any local file that large
-  would do the same. A real fix (streaming decode) is a larger, separate change.
+  would do the same. A real fix (streaming decode) is a larger, separate change. **For an
+  SMB source specifically, this is now avoided via range reads (§6.2)** — but a huge
+  chapter over SMB still opens slowly (~140s for the 343MB/196-page case) since
+  `ReaderViewModel.init` computes every page's size with one sequential positional-read
+  round-trip per page before showing anything; parallelizing was deferred pending
+  confidence in smbj's concurrent-read thread-safety on a shared handle.
 
 ---
 

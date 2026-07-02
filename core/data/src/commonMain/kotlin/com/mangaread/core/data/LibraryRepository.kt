@@ -66,6 +66,7 @@ class LibraryRepository(db: MangaDatabase) {
                     volume = r.volume,
                     number = r.number,
                     pageCount = r.page_count?.toInt(),
+                    size = r.size,
                     lastPageIndex = r.last_page_index?.toInt() ?: 0,
                     completed = r.completed == 1L,
                     coverModel = coverModel(r.cover_path, r.format, r.locator),
@@ -206,6 +207,10 @@ class LibraryRepository(db: MangaDatabase) {
     suspend fun deleteSeriesNotScannedAt(scannedAt: Long) = withContext(ioDispatcher) {
         q.deleteSeriesNotScannedAt(scannedAt)
     }
+
+    /** Library size before a scan's prune step, so [com.mangaread.LibrarySyncer] can sanity-check
+     * a suspiciously small result before deleting the rest (PLAN.md §9.2). */
+    suspend fun seriesCount(): Long = withContext(ioDispatcher) { q.selectSeriesCount().executeAsOne() }
 
     /** (id, title) pairs still missing an AniList match — the enrichment pipeline's work
      * queue (PLAN.md §9.2). A one-shot snapshot, not reactive: the pipeline pulls a fresh

@@ -138,6 +138,7 @@ class ReaderViewModel(
                 volume = chapter.volume,
                 number = chapter.number,
                 pageCount = chapter.pageCount,
+                size = chapter.size,
                 dateAdded = 0L,
             )
             val provider = pageProviderFor(domainChapter, source)

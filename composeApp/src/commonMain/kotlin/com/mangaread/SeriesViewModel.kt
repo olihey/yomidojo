@@ -183,6 +183,7 @@ class SeriesViewModel(
             volume = chapter.volume,
             number = chapter.number,
             pageCount = null,
+            size = chapter.size,
             dateAdded = 0L,
         )
         try {

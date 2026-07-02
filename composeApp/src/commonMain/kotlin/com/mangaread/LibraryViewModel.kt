@@ -143,7 +143,10 @@ class LibraryViewModel(
      * dialog's own coroutine scope so it can show a real error instead of firing blind.
      * Validates the candidate connection *before* persisting/reconfiguring anything, so a
      * bad host/share/credentials can't clobber a working source or half-commit — returns
-     * an error message on failure, or null on success (scan already kicked off by then). */
+     * an error message on failure, or null as soon as the connection itself succeeds. The
+     * scan is deliberately fire-and-forget (its own `scope.launch`, not awaited here) so the
+     * dialog can close immediately on a successful connection instead of sitting open through
+     * the whole scan — same "Scanning..." top-bar indicator picks it up either way. */
     suspend fun connectSmb(host: String, share: String, username: String, password: String, rootPath: String, displayName: String): String? {
         val factory = smbSourceFactory ?: return "SMB isn't supported on this platform"
         val candidate = factory.build(host, share, username, password)
@@ -153,7 +156,7 @@ class LibraryViewModel(
         (source as? ConfigurableMangaSource)?.reconfigure(candidate)
         _canRescan.value = true
         _needsReGrant.value = false
-        runScan(rootPath)
+        scope.launch { runScan(rootPath) }
         return null
     }
 

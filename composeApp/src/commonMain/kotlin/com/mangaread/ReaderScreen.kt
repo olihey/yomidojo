@@ -231,8 +231,8 @@ private fun PagedReader(
                 }
                 when (val unit = units[unitIndex]) {
                     is PageUnit.Single -> ReaderPage(
-                        viewModel.pageModel, unit.index, readingDirectionRtl, viewModel.invertTapZones,
-                        isVertical, onZoneTap, onZoomChanged = { zoomedIn = it },
+                        viewModel.pageModel, viewModel.chapter.size, unit.index, readingDirectionRtl,
+                        viewModel.invertTapZones, isVertical, onZoneTap, onZoomChanged = { zoomedIn = it },
                     )
                     is PageUnit.Spread -> {
                         val order = if (readingDirectionRtl) listOf(unit.second, unit.first) else listOf(unit.first, unit.second)
@@ -240,6 +240,7 @@ private fun PagedReader(
                             order.forEach { pageIndex ->
                                 ReaderPage(
                                     viewModel.pageModel,
+                                    viewModel.chapter.size,
                                     pageIndex,
                                     readingDirectionRtl,
                                     viewModel.invertTapZones,
@@ -255,10 +256,15 @@ private fun PagedReader(
             }
         }
 
+        // Keeps the adjacent page composed (and its AsyncImage fetching) before it's actually
+        // scrolled into view, so the fetch/decode already happened by the time the user swipes —
+        // matters most on a network source (SMB, PLAN.md §6.2), where a fetch is a real
+        // round-trip instead of a fast local read.
         if (isVertical) {
             VerticalPager(
                 state = pagerState,
                 userScrollEnabled = !zoomedIn,
+                beyondViewportPageCount = 1,
                 modifier = Modifier.fillMaxSize(),
                 pageContent = pageContent,
             )
@@ -267,6 +273,7 @@ private fun PagedReader(
                 state = pagerState,
                 reverseLayout = readingDirectionRtl,
                 userScrollEnabled = !zoomedIn,
+                beyondViewportPageCount = 1,
                 modifier = Modifier.fillMaxSize(),
                 pageContent = pageContent,
             )
@@ -436,6 +443,7 @@ private fun ContinuousReader(
                     items(pageCount, key = { it }) { index ->
                         WebtoonPage(
                             pageModel = viewModel.pageModel,
+                            chapterSize = viewModel.chapter.size,
                             index = index,
                             // Reserves the image's real height up front instead of measuring it as
                             // zero/placeholder-sized until Coil decodes the bitmap — otherwise, as
@@ -774,6 +782,7 @@ private fun Zoomable(
 @Composable
 private fun ReaderPage(
     pageModel: String,
+    chapterSize: Long?,
     index: Int,
     isRtl: Boolean,
     invertTapZones: Boolean,
@@ -800,7 +809,7 @@ private fun ReaderPage(
         },
     ) { scale, offset ->
         AsyncImage(
-            model = MangaPage(pageModel, index),
+            model = MangaPage(pageModel, index, chapterSize),
             contentDescription = "Page ${index + 1}",
             contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize().graphicsLayer(
@@ -819,10 +828,10 @@ private fun ReaderPage(
  * [widthFraction] shrinks (and, via [aspectRatio], proportionally shortens) the page itself when
  * zoomed out, rather than visually scaling a fixed-size layout — see [ContinuousReader]. */
 @Composable
-private fun WebtoonPage(pageModel: String, index: Int, aspectRatio: Float, widthFraction: Float) {
+private fun WebtoonPage(pageModel: String, chapterSize: Long?, index: Int, aspectRatio: Float, widthFraction: Float) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
         AsyncImage(
-            model = MangaPage(pageModel, index),
+            model = MangaPage(pageModel, index, chapterSize),
             contentDescription = "Page ${index + 1}",
             contentScale = ContentScale.FillWidth,
             modifier = Modifier.fillMaxWidth(widthFraction).aspectRatio(aspectRatio),
