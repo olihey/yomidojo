@@ -7,7 +7,9 @@ import com.mangaread.core.data.DatabaseDriverFactory
 import com.mangaread.core.data.LibraryRepository
 import com.mangaread.core.data.createMangaDatabase
 import com.mangaread.core.metadata.AniListMetadataProvider
+import com.mangaread.core.metadata.KitsuMetadataProvider
 import com.mangaread.core.scanner.LibraryScanner
+import com.russhwolf.settings.SharedPreferencesSettings
 import io.ktor.client.HttpClient
 
 /**
@@ -41,7 +43,14 @@ class ScanWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
         return try {
             LibrarySyncer(repository, LibraryScanner(source)).sync(root)
             val coversDir = applicationContext.filesDir.resolve("covers").absolutePath
-            MetadataEnricher(repository, AniListMetadataProvider(), HttpClient(), coversDir).enrichPending()
+            // Fresh AppPreferences from the same backing store the Activity uses — this worker
+            // builds its own throwaway object graph per run, same pattern as source selection
+            // above, so it always reads whatever provider is currently selected in Settings.
+            val appPrefs = AppPreferences(
+                SharedPreferencesSettings(applicationContext.getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
+            )
+            val providers = MetadataProviders(AniListMetadataProvider(), KitsuMetadataProvider())
+            MetadataEnricher(repository, { providers.get(appPrefs.metadataProvider.value) }, HttpClient(), coversDir).enrichPending()
             Result.success()
         } catch (t: Throwable) {
             android.util.Log.w("ScanWorker", "background scan failed", t)

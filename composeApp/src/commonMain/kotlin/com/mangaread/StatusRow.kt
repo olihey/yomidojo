@@ -1,8 +1,11 @@
 package com.mangaread
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,4 +46,27 @@ private fun statusPresentation(status: String?): Pair<String, Color>? = when (st
     "CANCELLED" -> "Cancelled" to Color(0xFFF44336)
     "HIATUS" -> "Hiatus" to Color(0xFFFFC107)
     else -> null
+}
+
+/** [Series.metadataProvider] -> its display attribution ("Data provided by AniList") — null
+ * for an unmatched series (never stamped) or an unrecognized value (future-proofing). */
+private fun providerAttribution(providerId: String?): String? = when (providerId) {
+    "ANILIST" -> "Data provided by AniList"
+    "KITSU" -> "Data provided by Kitsu"
+    else -> null
+}
+
+/** Small overlay label on the series header's banner (PLAN.md §9.3) — only shown once a
+ * series is actually matched, so an unmatched series' blank banner stays clean. */
+@Composable
+fun MetadataAttributionLabel(providerId: String?, modifier: Modifier = Modifier) {
+    val text = providerAttribution(providerId) ?: return
+    Text(
+        text,
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        color = Color.White,
+        style = MaterialTheme.typography.labelSmall,
+    )
 }

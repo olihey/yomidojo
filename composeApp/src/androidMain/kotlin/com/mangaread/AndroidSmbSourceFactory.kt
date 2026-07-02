@@ -15,4 +15,6 @@ class AndroidSmbSourceFactory(context: Context) : SmbSourceFactory {
     override fun savePassword(password: String) = credentialStore.savePassword(password)
 
     override fun loadPassword(): String? = credentialStore.loadPassword()
+
+    override fun clearPassword() = credentialStore.clear()
 }

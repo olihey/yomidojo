@@ -1,0 +1,3 @@
+-- v4 -> v5: track which metadata provider (AniList/Kitsu) produced a series' current
+-- data, so the UI can show attribution and Fix Metadata can default back to the right one.
+ALTER TABLE series ADD COLUMN metadata_provider TEXT;

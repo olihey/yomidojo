@@ -47,6 +47,7 @@ data class Series(
     val averageScore: Int? = null,     // 0-100
     val siteUrl: String? = null,
     val bannerPath: String? = null,    // app-internal storage path for the downloaded banner
+    val metadataProvider: String? = null, // which provider matched this: ANILIST | KITSU (§9.3)
 )
 
 data class Chapter(

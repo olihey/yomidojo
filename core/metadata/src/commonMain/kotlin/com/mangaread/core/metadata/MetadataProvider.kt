@@ -28,12 +28,20 @@ data class RemoteWorkDetails(
     val description: String?,   // HTML stripped, "(Source: …)" removed
     val coverUrl: String?,
     val startYear: Int?,
-    val status: String?,        // AniList MediaStatus: FINISHED, RELEASING, ...
-    val format: String?,        // AniList MediaFormat: MANGA, NOVEL, ONE_SHOT, ...
+    /** Canonical status string, normalized to AniList's MediaStatus values (FINISHED,
+     * RELEASING, NOT_YET_RELEASED, CANCELLED, HIATUS) regardless of which provider this
+     * came from — so downstream code (StatusRow, sorting) never needs to know the source. */
+    val status: String?,
+    /** Canonical format string, normalized to AniList's MediaFormat values (MANGA, NOVEL,
+     * ONE_SHOT, ...) regardless of provider — see [status]. */
+    val format: String?,
     val genres: List<String>,
     val tags: List<String>,
     val isAdult: Boolean,
     val averageScore: Int?,     // 0-100, null if not enough ratings
     val siteUrl: String?,
     val bannerUrl: String?,
+    /** Which provider this came from ("ANILIST"/"KITSU") — stored on the series so the UI
+     * can show attribution and Fix Metadata can default back to the right one. */
+    val providerId: String,
 )

@@ -27,6 +27,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -179,6 +180,10 @@ private fun SeriesHeader(
                         1f to MaterialTheme.colorScheme.background,
                     ),
                 ),
+            )
+            MetadataAttributionLabel(
+                series.metadataProvider,
+                Modifier.align(Alignment.BottomEnd).padding(8.dp),
             )
         }
         // overlapAbove shifts this row up into the banner and shrinks the space it reserves by
@@ -350,20 +355,33 @@ private fun ReadStatusOverlay(chapter: ChapterCard, modifier: Modifier = Modifie
     }
 }
 
-/** Fix Metadata (PLAN.md §9.1): an editable, title-prefilled AniList search with a
- * cover + title + year candidate list — picking one rebinds external_id and re-enriches. */
+/** Fix Metadata (PLAN.md §9.1): an editable, title-prefilled search with a cover + title +
+ * year candidate list — picking one rebinds external_id and re-enriches. The provider chips
+ * (§9.3) default to the global setting but only affect this one lookup — switching here
+ * never changes the app-wide default in Settings. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FixMetadataDialog(viewModel: SeriesViewModel) {
     val query by viewModel.metadataSearchQuery.collectAsState()
     val results by viewModel.metadataSearchResults.collectAsState()
     val loading by viewModel.metadataSearchLoading.collectAsState()
+    val provider by viewModel.metadataSearchProvider.collectAsState()
 
     AlertDialog(
         onDismissRequest = viewModel::dismissMetadataSearch,
         title = { Text("Fix metadata") },
         text = {
             Column(Modifier.fillMaxWidth()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    MetadataProviderChoice.entries.forEach { choice ->
+                        FilterChip(
+                            selected = choice == provider,
+                            onClick = { viewModel.setMetadataSearchProvider(choice) },
+                            label = { Text(choice.label()) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
                         value = query,

@@ -151,6 +151,7 @@ private fun MediaDetails.toRemoteWorkDetails() = RemoteWorkDetails(
     averageScore = averageScore,
     siteUrl = siteUrl,
     bannerUrl = bannerImage,
+    providerId = "ANILIST",
 )
 
 private fun MediaTitle.preferred(): String = english ?: romaji ?: native ?: "Unknown"

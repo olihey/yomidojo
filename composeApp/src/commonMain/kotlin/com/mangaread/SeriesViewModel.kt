@@ -5,7 +5,6 @@ import com.mangaread.core.data.LibraryRepository
 import com.mangaread.core.domain.Chapter as DomainChapter
 import com.mangaread.core.domain.ChapterFormat
 import com.mangaread.core.domain.Series as DomainSeries
-import com.mangaread.core.metadata.MetadataProvider
 import com.mangaread.core.metadata.RemoteWork
 import com.mangaread.core.reader.pageProviderFor
 import com.mangaread.core.source.MangaSource
@@ -27,7 +26,8 @@ class SeriesViewModel(
     private val repository: LibraryRepository,
     private val source: MangaSource,
     val seriesId: String,
-    private val metadataProvider: MetadataProvider,
+    private val providers: MetadataProviders,
+    private val appPreferences: AppPreferences,
     private val coverClient: HttpClient,
     private val coversDir: String,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
@@ -44,11 +44,15 @@ class SeriesViewModel(
     val selectedIds = MutableStateFlow<Set<String>>(emptySet())
 
     /** Fix Metadata (PLAN.md §9.1): a keyword search prefilled with the current title, listing
-     * AniList candidates; picking one rebinds external_id and re-enriches. */
+     * candidates from [metadataSearchProvider]; picking one rebinds external_id and re-enriches. */
     val metadataSearchOpen = MutableStateFlow(false)
     val metadataSearchQuery = MutableStateFlow("")
     val metadataSearchResults = MutableStateFlow<List<RemoteWork>>(emptyList())
     val metadataSearchLoading = MutableStateFlow(false)
+
+    /** Defaults to the global setting every time the dialog opens (PLAN.md §9.3) — switching
+     * it here is a one-time override for this lookup only, never persisted as the new default. */
+    val metadataSearchProvider = MutableStateFlow(appPreferences.metadataProvider.value)
 
     /** Chapter ids already counted or currently being counted, so [chapters] re-emitting after a
      * write-back doesn't re-trigger the same chapter (PLAN.md §9: covers/counts are on-demand). */
@@ -92,6 +96,9 @@ class SeriesViewModel(
     fun openMetadataSearch() {
         metadataSearchQuery.value = series.value?.title ?: ""
         metadataSearchResults.value = emptyList()
+        // Reset to the current global default every time — never carries a stale override
+        // from a previous series or an earlier dialog session (PLAN.md §9.3).
+        metadataSearchProvider.value = appPreferences.metadataProvider.value
         metadataSearchOpen.value = true
         searchMetadata()
     }
@@ -110,13 +117,20 @@ class SeriesViewModel(
         metadataSearchResults.value = emptyList()
     }
 
+    /** One-time override for this lookup only (PLAN.md §9.3) — never touches the global
+     * setting. Re-runs the search immediately so switching provider mid-dialog refreshes results. */
+    fun setMetadataSearchProvider(choice: MetadataProviderChoice) {
+        metadataSearchProvider.value = choice
+        searchMetadata()
+    }
+
     fun searchMetadata() {
         val query = metadataSearchQuery.value
         if (query.isBlank()) { metadataSearchResults.value = emptyList(); return }
         scope.launch {
             metadataSearchLoading.value = true
             try {
-                metadataSearchResults.value = metadataProvider.search(query)
+                metadataSearchResults.value = providers.get(metadataSearchProvider.value).search(query)
             } catch (t: Throwable) {
                 metadataSearchResults.value = emptyList()
             } finally {
@@ -131,7 +145,7 @@ class SeriesViewModel(
         scope.launch {
             metadataSearchLoading.value = true
             try {
-                val details = metadataProvider.details(work.externalId)
+                val details = providers.get(metadataSearchProvider.value).details(work.externalId)
                 val coverPath = downloadCover(coverClient, coversDir, details.externalId, details.coverUrl)
                 val bannerPath = downloadBanner(coverClient, coversDir, details.externalId, details.bannerUrl)
                 repository.applyMetadata(seriesId, details, coverPath, bannerPath)

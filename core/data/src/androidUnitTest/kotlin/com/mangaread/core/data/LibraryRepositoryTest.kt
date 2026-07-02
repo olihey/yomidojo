@@ -125,6 +125,7 @@ class LibraryRepositoryTest {
         assertEquals(88, enriched?.averageScore)
         assertEquals("https://anilist.co/manga/42", enriched?.siteUrl)
         assertEquals("/covers/a_banner.jpg", enriched?.bannerPath)
+        assertEquals("ANILIST", enriched?.metadataProvider)
 
         // Rescan (same series, later timestamp) must not clobber the applied metadata —
         // upsertSeries's ON CONFLICT deliberately excludes these columns.
@@ -162,6 +163,26 @@ class LibraryRepositoryTest {
         assertEquals(listOf("a" to "A"), repo.unmatchedSeries())
     }
 
+    @Test
+    fun reset_library_wipes_series_chapters_progress_and_source() = runTest {
+        val (repo, db) = newRepo()
+        repo.persistSeries(series("a", "A", 1), listOf(chapter("c1", "a", 1.0)))
+        repo.applyMetadata("a", details(), coverPath = "/covers/a.jpg", bannerPath = null)
+        db.schemaQueries.upsertProgress(chapter_id = "c1", last_page_index = 3, completed = 0, updated_at = 5, device_id = null)
+        repo.saveLocalRoot("content://tree/primary%3AManga", "Manga")
+
+        assertEquals(1, repo.observeLibrary().first().size)
+        assertEquals("content://tree/primary%3AManga", repo.savedLocalRoot())
+
+        repo.resetLibrary()
+
+        assertEquals(emptyList(), repo.observeLibrary().first(), "no series left")
+        assertEquals(emptyList(), repo.observeChapters("a").first(), "no chapters left")
+        assertEquals(null, repo.savedLocalRoot(), "source forgotten")
+        assertEquals(null, repo.savedSourceType())
+        assertEquals(0L, db.schemaQueries.selectSeriesCount().executeAsOne())
+    }
+
     private fun details() = RemoteWorkDetails(
         externalId = "42",
         title = "A",
@@ -180,5 +201,6 @@ class LibraryRepositoryTest {
         averageScore = 88,
         siteUrl = "https://anilist.co/manga/42",
         bannerUrl = "https://example.com/a_banner.jpg",
+        providerId = "ANILIST",
     )
 }

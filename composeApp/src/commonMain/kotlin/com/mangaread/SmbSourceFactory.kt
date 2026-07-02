@@ -12,4 +12,6 @@ interface SmbSourceFactory {
     fun build(host: String, share: String, username: String, password: String): MangaSource
     fun savePassword(password: String)
     fun loadPassword(): String?
+    /** Settings -> Reset library (PLAN.md §7.1) forgets any saved SMB credentials too. */
+    fun clearPassword()
 }

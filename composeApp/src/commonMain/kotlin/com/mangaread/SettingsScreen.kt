@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
@@ -14,6 +16,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -39,6 +42,11 @@ fun TitleLanguage.label(): String = when (this) {
     TitleLanguage.ANILIST_NATIVE -> "AniList - Native"
 }
 
+fun MetadataProviderChoice.label(): String = when (this) {
+    MetadataProviderChoice.ANILIST -> "AniList"
+    MetadataProviderChoice.KITSU -> "Kitsu"
+}
+
 /** Shared with the reader's chrome quick-switcher, so both use identical wording. */
 fun ReadingMode.label(): String = when (this) {
     ReadingMode.PAGED_LTR -> "Paged, left to right"
@@ -58,12 +66,19 @@ fun ReadingMode.shortLabel(): String = when (this) {
 /** Reader settings (PLAN.md §8.1): default reading mode, tap-zone layout, volume-key paging. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(prefs: ReaderPreferences, appPreferences: AppPreferences, onBack: () -> Unit) {
+fun SettingsScreen(
+    prefs: ReaderPreferences,
+    appPreferences: AppPreferences,
+    onBack: () -> Unit,
+    onResetLibrary: () -> Unit,
+) {
     var readingMode by remember { mutableStateOf(prefs.defaultReadingMode) }
     var invertTapZones by remember { mutableStateOf(prefs.invertTapZones) }
     var volumeKeyPaging by remember { mutableStateOf(prefs.volumeKeyPaging) }
+    var showResetConfirm by remember { mutableStateOf(false) }
     val themeMode by appPreferences.themeMode.collectAsState()
     val titleLanguage by appPreferences.titleLanguage.collectAsState()
+    val metadataProvider by appPreferences.metadataProvider.collectAsState()
 
     Scaffold(
         topBar = {
@@ -124,6 +139,33 @@ fun SettingsScreen(prefs: ReaderPreferences, appPreferences: AppPreferences, onB
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
 
             Text(
+                "Metadata provider",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp),
+            )
+            Text(
+                "Used for background matching of new series. Fix Metadata (on a series screen) " +
+                    "can always search a different provider just for that one lookup.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            MetadataProviderChoice.entries.forEach { choice ->
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable { appPreferences.setMetadataProvider(choice) }
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    RadioButton(selected = choice == metadataProvider, onClick = { appPreferences.setMetadataProvider(choice) })
+                    Text(choice.label())
+                }
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+            Text(
                 "Default reading mode",
                 style = MaterialTheme.typography.titleSmall,
                 modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp),
@@ -174,7 +216,55 @@ fun SettingsScreen(prefs: ReaderPreferences, appPreferences: AppPreferences, onB
                     prefs.volumeKeyPaging = it
                 },
             )
+
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+            Text(
+                "Reset library",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp),
+            )
+            Text(
+                "Forgets the configured source and wipes every scanned series, chapter, and " +
+                    "reading-progress row, plus all cached cover/banner files. Can't be undone.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            TextButton(
+                onClick = { showResetConfirm = true },
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier.padding(horizontal = 8.dp),
+            ) { Text("Reset library") }
         }
+    }
+
+    if (showResetConfirm) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirm = false },
+            title = { Text("Reset library?") },
+            text = {
+                Text(
+                    "This deletes your entire scanned library and all cached cover/banner " +
+                        "files, and forgets the configured source (including any saved SMB " +
+                        "password). Your manga files themselves are untouched. This can't be undone.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showResetConfirm = false
+                        onResetLibrary()
+                        onBack()
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Reset") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirm = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 

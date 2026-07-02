@@ -13,6 +13,7 @@ import com.mangaread.core.data.LibraryRepository
 import com.mangaread.core.data.DatabaseDriverFactory
 import com.mangaread.core.data.createMangaDatabase
 import com.mangaread.core.metadata.AniListMetadataProvider
+import com.mangaread.core.metadata.KitsuMetadataProvider
 import com.mangaread.core.scanner.LibraryScanner
 import com.russhwolf.settings.SharedPreferencesSettings
 import coil3.ImageLoader
@@ -40,45 +41,53 @@ class MainActivity : ComponentActivity() {
         val localSource = SafMangaSource(applicationContext)
         val source = ConfigurableMangaSource(localSource)
         val smbSourceFactory = AndroidSmbSourceFactory(applicationContext)
-        SingletonImageLoader.setSafe { ctx ->
-            ImageLoader.Builder(ctx)
-                .components {
-                    add(Keyer<MangaCover> { cover, _: Options -> cover.model })
-                    add(CoverFetcher.Factory(source))
-                    add(Keyer<MangaPage> { page, _: Options -> "${page.model}#${page.index}" })
-                    add(PageFetcher.Factory(source))
-                }
-                // Explicit (rather than relying on Coil's default) so covers/pages extracted
-                // on demand from CBZ/folders are only ever extracted once and survive restarts.
-                .diskCache {
-                    DiskCache.Builder()
-                        .directory(ctx.cacheDir.resolve("image_cache").toOkioPath())
-                        .maxSizePercent(0.05)
-                        .build()
-                }
-                .build()
-        }
 
         val database = createMangaDatabase(DatabaseDriverFactory(applicationContext).create())
         val repository = LibraryRepository(database)
+        val coversDir = applicationContext.filesDir.resolve("covers").absolutePath
+
+        // Built eagerly (not inside setSafe's lazy factory) so MainActivity can keep a direct
+        // reference — Settings -> Reset library needs to clear it, since series/chapter IDs are
+        // deterministic (PLAN.md §5) and a later re-scan of the same folder would otherwise
+        // resurface an old cached bitmap under the same cache key even after a full DB reset.
+        val imageLoader = ImageLoader.Builder(applicationContext)
+            .components {
+                add(Keyer<MangaCover> { cover, _: Options -> cover.cacheKey })
+                add(CoverFetcher.Factory(source, repository, coversDir))
+                add(Keyer<MangaPage> { page, _: Options -> "${page.model}#${page.index}" })
+                add(PageFetcher.Factory(source))
+            }
+            // Explicit (rather than relying on Coil's default) so covers/pages extracted
+            // on demand from CBZ/folders are only ever extracted once and survive restarts.
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(applicationContext.cacheDir.resolve("image_cache").toOkioPath())
+                    .maxSizePercent(0.05)
+                    .build()
+            }
+            .build()
+        SingletonImageLoader.setSafe { imageLoader }
+
         val scanner = LibraryScanner(source)
         val prefs = LibraryPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
-        val metadataProvider = AniListMetadataProvider()
-        val coversDir = applicationContext.filesDir.resolve("covers").absolutePath
-        val coverClient = HttpClient()
-        val enricher = MetadataEnricher(repository, metadataProvider, coverClient, coversDir)
         val appPrefs = AppPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
-        viewModel = LibraryViewModel(repository, scanner, source, localSource, smbSourceFactory, prefs, enricher, appPrefs)
+        val metadataProviders = MetadataProviders(AniListMetadataProvider(), KitsuMetadataProvider())
+        val coverClient = HttpClient()
+        val enricher = MetadataEnricher(repository, { metadataProviders.get(appPrefs.metadataProvider.value) }, coverClient, coversDir)
+        viewModel = LibraryViewModel(
+            repository, scanner, source, localSource, smbSourceFactory, prefs, enricher, appPrefs, coversDir,
+            clearImageCache = { imageLoader.diskCache?.clear(); imageLoader.memoryCache?.clear() },
+        )
         readerPrefs = ReaderPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
         val graph = AppGraph(
             repository, source, viewModel, readerPrefs, appPrefs,
-            metadataProvider, enricher, coverClient, coversDir,
+            metadataProviders, enricher, coverClient, coversDir,
         )
 
         pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->

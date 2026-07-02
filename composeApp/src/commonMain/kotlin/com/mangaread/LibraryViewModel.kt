@@ -41,6 +41,13 @@ class LibraryViewModel(
     private val prefs: LibraryPreferences,
     private val enricher: MetadataEnricher,
     private val appPreferences: AppPreferences,
+    /** App-internal cover/banner storage (PLAN.md §9, §9.4) — [resetLibrary] clears it directly
+     * since it owns this path, same as [downloadCover]/`CoverFetcher` do when writing to it. */
+    private val coversDir: String,
+    /** Clears the platform image loader's own cache (PLAN.md §7.1) — deterministic series/chapter
+     * IDs (§5) mean a later re-scan of the same folder recomputes the *same* IDs, so without this
+     * a stale cached bitmap could resurface under an old cache key even after a full DB reset. */
+    private val clearImageCache: () -> Unit = {},
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
     private val syncer = LibrarySyncer(repository, scanner)
@@ -158,6 +165,23 @@ class LibraryViewModel(
         _needsReGrant.value = false
         scope.launch { runScan(rootPath) }
         return null
+    }
+
+    /** Settings -> Reset library (PLAN.md §7.1): wipes the DB, the cached cover/banner files,
+     * the image loader's own cache, and any saved SMB credentials, then reverts to the local SAF
+     * source — the app ends up back in its pre-first-scan "no source configured" state. */
+    fun resetLibrary() {
+        scope.launch {
+            repository.resetLibrary()
+            clearDirectory(coversDir)
+            clearImageCache()
+            smbSourceFactory?.clearPassword()
+            (source as? ConfigurableMangaSource)?.reconfigure(localSource)
+            _canRescan.value = false
+            _needsReGrant.value = false
+            exitSelectionMode()
+            query.value = ""
+        }
     }
 
     fun rescan() {

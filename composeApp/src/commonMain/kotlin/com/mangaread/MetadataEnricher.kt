@@ -12,17 +12,22 @@ import kotlinx.coroutines.sync.withLock
  * Best-effort and resumable — a series that fails to match or fetch just stays unmatched
  * (the query that feeds this is `WHERE external_id IS NULL`) and gets picked up again on
  * the next pass, whether that's the next foreground scan or the periodic background worker.
- * [provider] owns its own rate limiting (§9.2), so this loop doesn't need to throttle itself.
+ * Each provider owns its own rate limiting (§9.2), so this loop doesn't need to throttle
+ * itself. [providerFor] is resolved fresh at the start of every [enrichPending] call
+ * (not fixed at construction) so a background pass always uses whichever provider is
+ * currently selected in Settings (PLAN.md §9.3), without needing to recreate this class
+ * when the setting changes.
  */
 class MetadataEnricher(
     private val repository: LibraryRepository,
-    private val provider: MetadataProvider,
+    private val providerFor: () -> MetadataProvider,
     private val coverClient: HttpClient,
     private val coversDir: String,
 ) {
     /** Serialized via [libraryWriteMutex] — see its doc for why this can't overlap a scan
      * (or another enrichment pass) touching the same database. */
     suspend fun enrichPending() = libraryWriteMutex.withLock {
+        val provider = providerFor()
         for ((seriesId, rawTitle) in repository.unmatchedSeries()) {
             try {
                 val query = cleanSearchQuery(rawTitle)

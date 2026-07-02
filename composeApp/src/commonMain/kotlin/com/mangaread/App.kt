@@ -39,6 +39,7 @@ fun App(graph: AppGraph, onPickFolder: () -> Unit) {
                     prefs = graph.readerPreferences,
                     appPreferences = graph.appPreferences,
                     onBack = { navController.popBackStack() },
+                    onResetLibrary = graph.libraryViewModel::resetLibrary,
                 )
             }
             composable("series/{seriesId}") { entry ->
@@ -46,7 +47,7 @@ fun App(graph: AppGraph, onPickFolder: () -> Unit) {
                 val viewModel = remember(seriesId) {
                     SeriesViewModel(
                         graph.repository, graph.source, seriesId,
-                        graph.metadataProvider, graph.coverClient, graph.coversDir,
+                        graph.metadataProviders, graph.appPreferences, graph.coverClient, graph.coversDir,
                     )
                 }
                 SeriesScreen(

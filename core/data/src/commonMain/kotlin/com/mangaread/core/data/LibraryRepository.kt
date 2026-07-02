@@ -213,6 +213,19 @@ class LibraryRepository(db: MangaDatabase) {
      * a suspiciously small result before deleting the rest (PLAN.md §9.2). */
     suspend fun seriesCount(): Long = withContext(ioDispatcher) { q.selectSeriesCount().executeAsOne() }
 
+    /** Settings -> Reset library (PLAN.md §7.1): wipes every series/chapter/progress row and the
+     * configured source, so the app returns to its pre-first-scan state. Only touches the DB —
+     * cached cover/banner files and the image loader's cache live on disk and are cleared by the
+     * caller, which owns those filesystem paths. */
+    suspend fun resetLibrary() = withContext(ioDispatcher) {
+        q.transaction {
+            q.deleteAllReadingProgress()
+            q.deleteAllChapters()
+            q.deleteAllSeries()
+            q.deleteAllSources()
+        }
+    }
+
     /** (id, title) pairs still missing an AniList match — the enrichment pipeline's work
      * queue (PLAN.md §9.2). A one-shot snapshot, not reactive: the pipeline pulls a fresh
      * batch each pass rather than reacting to every intermediate write mid-run. */
@@ -243,6 +256,7 @@ class LibraryRepository(db: MangaDatabase) {
                 average_score = details.averageScore?.toLong(),
                 site_url = details.siteUrl,
                 banner_path = bannerPath,
+                metadata_provider = details.providerId,
                 id = seriesId,
             )
         }
@@ -251,6 +265,15 @@ class LibraryRepository(db: MangaDatabase) {
      * badge shows "✕" for these instead of "?" (never checked yet). */
     suspend fun markMetadataChecked(seriesId: String) = withContext(ioDispatcher) {
         q.markMetadataChecked(nowEpochMillis(), seriesId)
+    }
+
+    /** Promotes a live-extracted cover (an unmatched series' first-chapter-first-page fallback,
+     * PLAN.md §9.4) to a permanent `cover_path` once the platform cover fetcher has written it to
+     * app-internal storage — the same storage/lookup [applyMetadata]'s downloaded covers use, so
+     * it survives Coil's disk cache being cleared. The `cover_path IS NULL` guard in the query
+     * means this can never clobber a real matched cover, no matter the call order. */
+    suspend fun cacheSeriesCoverIfMissing(seriesId: String, coverPath: String) = withContext(ioDispatcher) {
+        q.setCoverPathIfMissing(coverPath, seriesId)
     }
 
     private fun coverModel(coverPath: String?, format: String?, locator: String?): String? = when {
@@ -284,6 +307,7 @@ class LibraryRepository(db: MangaDatabase) {
         averageScore = r.average_score?.toInt(),
         siteUrl = r.site_url,
         bannerPath = r.banner_path,
+        metadataProvider = r.metadata_provider,
     )
 
     private fun String?.splitList(): List<String> = this?.split("|")?.filter { it.isNotBlank() } ?: emptyList()

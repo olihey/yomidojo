@@ -12,6 +12,11 @@ enum class ThemeMode { LIGHT, DARK, SYSTEM }
  * that language wasn't available for the matched work — see [displayTitle]. */
 enum class TitleLanguage { FILE, ANILIST_ROMAJI, ANILIST_ENGLISH, ANILIST_NATIVE }
 
+/** Which metadata provider to use by default for background enrichment and as the Fix
+ * Metadata dialog's starting point (PLAN.md §9.3) — AniList or Kitsu, the only provider
+ * checked that also has a real banner image. */
+enum class MetadataProviderChoice { ANILIST, KITSU }
+
 /**
  * App-wide display preferences. [themeMode]/[titleLanguage] are `StateFlow`s, not plain
  * settings-backed properties like the other preferences classes — `App()` wraps the whole nav host
@@ -44,8 +49,21 @@ class AppPreferences(private val settings: Settings) {
         settings.putString(KEY_TITLE_LANGUAGE, language.name)
     }
 
+    private val _metadataProvider = MutableStateFlow(
+        settings.getStringOrNull(KEY_METADATA_PROVIDER)
+            ?.let { runCatching { MetadataProviderChoice.valueOf(it) }.getOrNull() }
+            ?: MetadataProviderChoice.ANILIST,
+    )
+    val metadataProvider: StateFlow<MetadataProviderChoice> = _metadataProvider
+
+    fun setMetadataProvider(choice: MetadataProviderChoice) {
+        _metadataProvider.value = choice
+        settings.putString(KEY_METADATA_PROVIDER, choice.name)
+    }
+
     private companion object {
         const val KEY_THEME_MODE = "app.themeMode"
         const val KEY_TITLE_LANGUAGE = "app.titleLanguage"
+        const val KEY_METADATA_PROVIDER = "app.metadataProvider"
     }
 }

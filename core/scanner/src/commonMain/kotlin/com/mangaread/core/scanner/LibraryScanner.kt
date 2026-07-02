@@ -74,7 +74,7 @@ class LibraryScanner(private val source: MangaSource) {
             sourceId = source.id,
             locator = e.locator,
             format = ChapterFormat.IMAGE_DIR,
-            displayName = name,
+            displayName = cleanDisplayName(name),
             volume = parsed.volume,
             number = parsed.number,
             pageCount = pages,
@@ -92,7 +92,7 @@ class LibraryScanner(private val source: MangaSource) {
             sourceId = source.id,
             locator = e.locator,
             format = ChapterFormat.CBZ,
-            displayName = e.name,
+            displayName = cleanDisplayName(e.name),
             volume = parsed.volume,
             number = parsed.number,
             pageCount = null,           // counted when the CBZ provider is built (Phase 2)
@@ -106,3 +106,17 @@ class LibraryScanner(private val source: MangaSource) {
 private fun String.ext() = substringAfterLast('.', "").lowercase()
 private fun String.isCbz() = ext() == "cbz"
 private fun String.isImage() = ext() in setOf("jpg", "jpeg", "png", "webp", "gif", "avif", "bmp")
+
+/**
+ * Chapter card/reader-title text (PLAN.md §7.3) — a raw filename like "chaper_18.5.cbz" reads
+ * poorly as a title. Strips the archive extension (only when actually one — an IMAGE_DIR
+ * chapter's folder name never has one, and a stray "." inside a folder name like "Vol. 01"
+ * must survive), turns underscores into spaces, and capitalizes the first letter. Deliberately
+ * separate from [FilenameParser]: that parser's job is extracting volume/chapter *numbers* (and
+ * its `seriesTitle` strips the chapter token/number entirely, which would leave this blank).
+ */
+internal fun cleanDisplayName(rawName: String): String {
+    val noExt = if (rawName.isCbz()) rawName.substringBeforeLast('.') else rawName
+    val spaced = noExt.replace('_', ' ').trim()
+    return if (spaced.isEmpty()) spaced else spaced[0].uppercase() + spaced.substring(1)
+}

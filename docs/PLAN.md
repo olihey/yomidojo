@@ -490,6 +490,22 @@ grows. Verified on-device against a matched series with a real banner, full stat
 `status`/genres, from before those columns existed) — no crash, no clipping, correct fallback in
 each case, Continue showing in the top bar only when an unread chapter exists.
 
+**Chapter card/reader title cleanup (added 2026-07-02).** `Chapter.displayName` used to be the
+raw filename verbatim, extension included — real scanlation releases in this library are named
+like `"chaper_18.5.cbz"` (see `FilenameParser`'s corpus), which read poorly as a title in the
+chapter grid, the reader's top-chrome subtitle, and the "next chapter" swipe preview (all read
+the same field). `LibraryScanner.cleanDisplayName()` (new, private to the scanner) strips a
+recognized archive extension — only when the entry actually `isCbz()`, since an IMAGE_DIR
+chapter's folder name never has one and a stray "." inside a folder name like `"Vol. 01"` must
+survive — replaces underscores with spaces, and capitalizes the first letter:
+`"chaper_18.5.cbz"` → `"Chaper 18.5"`. Deliberately its own function, not `FilenameParser`'s
+`seriesTitle` (which strips the chapter keyword/number entirely — right for extracting a series
+name, wrong for a per-chapter label, which would come out blank). Applied at scan time (both
+`imageDirChapter`/`cbzChapter`), so every reader already picking up `displayName` gets it for
+free, and a rescan self-heals already-scanned libraries without a migration (`upsertChapter`'s
+`ON CONFLICT` already overwrites `display_name` every scan). Verified on-device against the
+real library: `chaper_0.cbz` → `Chaper 0`, `chaper_18.5.cbz` → `Chaper 18.5`.
+
 ### 7.4 Responsive (phone → large tablet)
 
 `GridCells.Adaptive` reflows both the library grid and the per-volume chapter grid by
@@ -833,6 +849,95 @@ already accommodate overrides; only UI is added.
 
 **"Newly added chapters"** stays purely local: a query over `chapter.date_added`. No
 upstream polling.
+
+### 9.3 Selectable metadata provider (AniList + Kitsu, added 2026-07-02)
+
+AniList's manhwa/webtoon coverage is comparatively thin. Added a second provider, **Kitsu**
+(`https://kitsu.io/api/edge`, public JSON:API, no key), picked over MangaDex/MangaUpdates
+specifically because it's the only alternative checked with a genuine wide banner image:
+
+| Field | AniList | Kitsu |
+|---|---|---|
+| Cover | `coverImage` | `posterImage` |
+| Banner | `bannerImage` | `coverImage` — real ~4.2:1 wide image when present, but **not every entry has one** (confirmed null on a real title during verification) |
+| Title split | romaji/english/native | `titles` (locale-keyed: `en`, `en_jp`, `ja_jp`, ...) + `canonicalTitle` |
+| Status/format | `MediaStatus`/`MediaFormat` | `status` (lowercase)/`subtype` (incl. manhwa/manhua) — different strings, normalized at the boundary |
+| Genres | direct list | via `categories` relationship (`?include=categories`) |
+| Author | staff list | `mangaStaff` relationship confirmed frequently empty in practice — left `null` rather than pay for an unreliable extra request |
+| Score | `averageScore` (0-100) | `averageRating` (0-100 string) |
+
+`RemoteWorkDetails.status`/`.format` are always normalized to **AniList's canonical strings**
+(FINISHED/RELEASING/NOT_YET_RELEASED/CANCELLED/HIATUS; MANGA/NOVEL/ONE_SHOT) regardless of
+source provider, so `StatusRow`, sorting, and filtering never branch on provider. A new
+`RemoteWorkDetails.providerId` ("ANILIST" | "KITSU") flows through the existing single
+`details()` → `applyMetadata()` path into a new `series.metadata_provider` column (`4.sqm`),
+which drives a small "Data provided by AniList/Kitsu" attribution label on the series header
+banner — shown only once a series is actually matched, never for an unmatched or
+pre-this-feature-matched series (that column stays `NULL` until the series is next matched).
+
+**UX, confirmed with the user:** a global default (Settings → Metadata provider), plus an
+independent per-lookup override in the Fix Metadata dialog (`FilterChip`s for AniList/Kitsu)
+that defaults to the current global choice but never persists as the new default — switching
+it only affects that one search/apply. Changing the global default is **not retroactive**:
+already-matched series keep whatever they have; only series still unmatched (or explicitly
+re-matched via Fix Metadata) pick up the new provider. `MetadataEnricher` takes a
+`providerFor: () -> MetadataProvider` supplier (not a fixed instance) so a background
+enrichment pass always reflects whatever is currently selected, without needing to be
+reconstructed when the setting changes.
+
+**Bug found and fixed during on-device verification.** Kitsu's `titles` object can contain an
+explicit JSON `null` for a locale key (e.g. `"titles":{"en":null,"en_jp":"...",...}`), but the
+DTO declared `titles: Map<String, String>` (non-nullable values) — kotlinx.serialization threw
+on deserializing that entry, the exception propagated uncaught out of `KitsuMetadataProvider`
+to `SeriesViewModel`'s catch-all, and surfaced as a silent "No matches" in the Fix Metadata
+dialog even though Kitsu's API had the correct top result. Confirmed against the real API
+(`curl`) before and after: fixed by changing the field to `Map<String, String?>` and
+`titles.values.filterNotNull().firstOrNull()` in the title-fallback chain.
+
+### 9.4 Persisting an unmatched series' live-extracted cover (added 2026-07-02)
+
+An unmatched series (no `external_id`, no downloaded `cover_path`) shows its first chapter's
+first page as a stand-in cover — `LibraryRepository.coverModel()` falls back to a scheme-tagged
+locator (`"cbz:<uri>"` / `"imgdir:<uri>"`) that `CoverFetcher` (Android) extracts live via
+`MangaSource`. This was only ever cached in Coil's own disk cache (`cacheDir`, OS-clearable,
+5% of available space) — never written to the app-internal `coversDir` or `series.cover_path`
+the way a matched series' downloaded cover is (§9), so a cleared cache (or, for SMB, a cache
+eviction under normal use) meant re-extracting — for SMB, re-downloading the whole first
+chapter — every time.
+
+**Fix:** `MangaCover` gained an optional `seriesId` (`composeApp/.../MangaCover.kt`), set only
+at the library grid's series-cover call site (`LibraryScreen.kt`'s `CoverPlaceholder`) — chapter
+covers, banners, and the reader's next-chapter preview leave it null and are unaffected. When
+`CoverFetcher.fetch()` extracts a live cover for a `seriesId`-tagged request, it now also writes
+the same bytes to `<coversDir>/<seriesId>.jpg` (`writeImageBytes`, factored out of
+`CoverStorage.kt`'s `downloadImage` so both the HTTP-downloaded and locally-extracted paths
+share one disk-write helper) and promotes it to `series.cover_path` via a new guarded query,
+`setCoverPathIfMissing` (`UPDATE ... WHERE id = ? AND cover_path IS NULL`) — the `IS NULL` guard
+means this can never race or clobber a real match's downloaded cover, regardless of call order.
+Once persisted, `coverModel()` resolves straight to the file path, so the series never hits
+`CoverFetcher`'s live-extraction branch again. Verified on-device: an unmatched series' grid
+cover survives a force-stop/relaunch, backed by a real file under `files/covers/`.
+
+Deliberately scoped to *series* covers only, not chapter covers — PLAN.md's earlier guidance
+(§9) to not rebuild the scrapped eager chapter-cover cache still stands; this is a narrow,
+on-demand, one-cover-per-series persistence, not that eager pass.
+
+**Follow-up: the fix above caused a visible flicker (found and fixed same day).** Persisting
+`cover_path` makes `observeLibrary()`'s reactive query re-emit, and that series' `coverModel`
+string flips from the scheme-tagged locator to the real file path. `Keyer<MangaCover>` keyed
+purely on `cover.model`, so Coil read that string change as a brand-new image — even though the
+bytes on disk are identical — and re-decoded it, flickering the tile. **Fix:** `MangaCover`
+gained a `cacheKey` (defaults to `model`, unaffected everywhere except series covers); the
+library grid computes `"$seriesId:${externalId ?: ""}"` instead, which stays stable across the
+"just persisted the local extraction" transition (same bytes) but changes once the series is
+actually matched (a genuinely different, downloaded cover) — `MainActivity`'s `Keyer<MangaCover>`
+now keys on `cover.cacheKey`. Verified on-device via a temporary log in `CoverFetcher.fetch()`
+(removed after): for a freshly-unmatched series, `fetch()`'s live-extraction branch ran exactly
+once even after `cover_path` was persisted and the grid recomposed with the new model string —
+Coil served the second request from its memory cache without re-invoking the fetcher at all.
+Separately confirmed the cache key *does* change on a real match: after Fix Metadata rebound
+`external_id`, the grid tile correctly swapped to the newly downloaded cover instead of staying
+stuck on the locally-cached first page.
 
 ---
 

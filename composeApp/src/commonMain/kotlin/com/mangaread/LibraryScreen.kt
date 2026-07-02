@@ -26,8 +26,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -130,15 +130,22 @@ fun LibraryScreen(
                 )
             }
         },
-        floatingActionButton = {
-            if (!selectionMode) FloatingActionButton(onClick = openChooser) { Text("+", Modifier.padding(4.dp)) }
-        },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             if (needsReGrant) ReGrantBanner(openChooser)
-            if (cards.isEmpty() && progress == null && query.isBlank() && !needsReGrant) {
+            if (!canRescan && !needsReGrant) {
+                // No source configured at all (PLAN.md §7.1) — the only way to add one now,
+                // replacing the old always-visible "+" FAB with something that only shows up
+                // when it's actually the next thing to do.
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No series yet — tap + to pick your manga folder.", Modifier.padding(24.dp))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("No library source configured yet.", Modifier.padding(bottom = 16.dp))
+                        Button(onClick = openChooser) { Text("+ Add source") }
+                    }
+                }
+            } else if (cards.isEmpty() && progress == null && query.isBlank() && !needsReGrant) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No series found in this library yet.", Modifier.padding(24.dp))
                 }
             } else {
                 if (!selectionMode) LibraryControls(viewModel, query, sort, ascending, filter)
@@ -299,6 +306,11 @@ private fun LibraryControls(
             onValueChange = { viewModel.query.value = it },
             placeholder = { Text("Search") },
             singleLine = true,
+            trailingIcon = {
+                if (query.isNotEmpty()) {
+                    IconButton(onClick = { viewModel.query.value = "" }) { Text("✕") }
+                }
+            },
             modifier = Modifier.fillMaxWidth(),
         )
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -351,7 +363,7 @@ private fun ListLayout(
                         Checkbox(checked = c.id in selectedIds, onCheckedChange = { onClick(c.id) })
                     } else {
                         Box {
-                            CoverPlaceholder(title, Modifier.size(40.dp, 56.dp), c.coverModel)
+                            CoverPlaceholder(title, Modifier.size(40.dp, 56.dp), c.coverModel, c.id, c.externalId)
                             SeriesReadStatusOverlay(c, Modifier.align(Alignment.BottomEnd), size = 16.dp)
                             MetadataStatusOverlay(c, Modifier.align(Alignment.BottomStart), size = 16.dp)
                         }
@@ -387,7 +399,7 @@ private fun DetailedLayout(
                     Checkbox(checked = c.id in selectedIds, onCheckedChange = { onClick(c.id) })
                 } else {
                     Box {
-                        CoverPlaceholder(title, Modifier.size(64.dp, 90.dp), c.coverModel)
+                        CoverPlaceholder(title, Modifier.size(64.dp, 90.dp), c.coverModel, c.id, c.externalId)
                         SeriesReadStatusOverlay(c, Modifier.align(Alignment.BottomEnd).padding(2.dp))
                         MetadataStatusOverlay(c, Modifier.align(Alignment.BottomStart).padding(2.dp))
                     }
@@ -424,7 +436,7 @@ private fun GridLayout(
             val title = c.displayTitle(titleLanguage)
             Column(Modifier.combinedClickable(onClick = { onClick(c.id) }, onLongClick = { onLongClick(c.id) })) {
                 Box {
-                    CoverPlaceholder(title, Modifier.fillMaxWidth().aspectRatio(0.7f), c.coverModel)
+                    CoverPlaceholder(title, Modifier.fillMaxWidth().aspectRatio(0.7f), c.coverModel, c.id, c.externalId)
                     SeriesReadStatusOverlay(c, Modifier.align(Alignment.BottomEnd).padding(4.dp))
                     MetadataStatusOverlay(c, Modifier.align(Alignment.BottomStart).padding(4.dp))
                     if (selectionMode) {
@@ -510,15 +522,24 @@ private fun MetadataStatusOverlay(card: LibraryCard, modifier: Modifier = Modifi
  * fetcher), layered over a tinted letter placeholder that shows while loading or on failure.
  */
 @Composable
-private fun CoverPlaceholder(title: String, modifier: Modifier = Modifier, model: String? = null) {
+private fun CoverPlaceholder(
+    title: String,
+    modifier: Modifier = Modifier,
+    model: String? = null,
+    seriesId: String? = null,
+    externalId: String? = null,
+) {
     Box(
         modifier.clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
         Text(title.trim().take(1).uppercase(), style = MaterialTheme.typography.titleLarge)
         if (model != null) {
+            // Stable across "just persisted the live-extracted cover" (§9.4) — only external_id
+            // changing (an actual match) should make Coil treat this as a new image to load.
+            val cacheKey = if (seriesId != null) "$seriesId:${externalId ?: ""}" else model
             AsyncImage(
-                model = MangaCover(model),
+                model = MangaCover(model, seriesId, cacheKey),
                 contentDescription = title,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize(),
