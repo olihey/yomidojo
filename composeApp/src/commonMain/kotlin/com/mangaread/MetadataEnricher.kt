@@ -36,7 +36,8 @@ class MetadataEnricher(
                 }
                 val details = provider.details(match.externalId)
                 val coverPath = downloadCover(coverClient, coversDir, details.externalId, details.coverUrl)
-                repository.applyMetadata(seriesId, details, coverPath)
+                val bannerPath = downloadBanner(coverClient, coversDir, details.externalId, details.bannerUrl)
+                repository.applyMetadata(seriesId, details, coverPath, bannerPath)
             } catch (t: Throwable) {
                 // Best-effort — leave this one unmatched, try again next pass.
             }

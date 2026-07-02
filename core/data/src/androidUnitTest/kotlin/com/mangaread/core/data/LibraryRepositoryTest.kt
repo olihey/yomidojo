@@ -96,7 +96,7 @@ class LibraryRepositoryTest {
         val (repo, _) = newRepo()
         repo.persistSeries(series("a", "A", 1), emptyList())
         repo.persistSeries(series("b", "B", 1), emptyList())
-        repo.applyMetadata("b", details(), coverPath = null)
+        repo.applyMetadata("b", details(), coverPath = null, bannerPath = null)
 
         assertEquals(listOf("a" to "A"), repo.unmatchedSeries())
     }
@@ -106,7 +106,7 @@ class LibraryRepositoryTest {
         val (repo, _) = newRepo()
         val s = series("a", "A", 1)
         repo.persistSeries(s, emptyList())
-        repo.applyMetadata("a", details(), coverPath = "/covers/a.jpg")
+        repo.applyMetadata("a", details(), coverPath = "/covers/a.jpg", bannerPath = "/covers/a_banner.jpg")
 
         val enriched = repo.observeSeries("a").first()
         assertEquals("Jane Author", enriched?.author)
@@ -117,6 +117,14 @@ class LibraryRepositoryTest {
         assertEquals("A Romaji", enriched?.titleRomaji)
         assertEquals("A", enriched?.titleEnglish)
         assertEquals("A Native", enriched?.titleNative)
+        assertEquals("FINISHED", enriched?.status)
+        assertEquals("MANGA", enriched?.format)
+        assertEquals(listOf("Comedy", "Drama"), enriched?.genres)
+        assertEquals(listOf("Iyashikei"), enriched?.tags)
+        assertEquals(true, enriched?.isAdult)
+        assertEquals(88, enriched?.averageScore)
+        assertEquals("https://anilist.co/manga/42", enriched?.siteUrl)
+        assertEquals("/covers/a_banner.jpg", enriched?.bannerPath)
 
         // Rescan (same series, later timestamp) must not clobber the applied metadata —
         // upsertSeries's ON CONFLICT deliberately excludes these columns.
@@ -125,13 +133,14 @@ class LibraryRepositoryTest {
         assertEquals("Jane Author", afterRescan?.author)
         assertEquals("42", afterRescan?.externalId)
         assertEquals("A Romaji", afterRescan?.titleRomaji)
+        assertEquals(listOf("Comedy", "Drama"), afterRescan?.genres)
     }
 
     @Test
     fun unmatched_series_empty_when_none_pending() = runTest {
         val (repo, _) = newRepo()
         repo.persistSeries(series("a", "A", 1), emptyList())
-        repo.applyMetadata("a", details(), coverPath = null)
+        repo.applyMetadata("a", details(), coverPath = null, bannerPath = null)
         assertEquals(emptyList(), repo.unmatchedSeries())
     }
 
@@ -163,5 +172,13 @@ class LibraryRepositoryTest {
         description = "A clean description.",
         coverUrl = "https://example.com/a.jpg",
         startYear = 1999,
+        status = "FINISHED",
+        format = "MANGA",
+        genres = listOf("Comedy", "Drama"),
+        tags = listOf("Iyashikei"),
+        isAdult = true,
+        averageScore = 88,
+        siteUrl = "https://anilist.co/manga/42",
+        bannerUrl = "https://example.com/a_banner.jpg",
     )
 }

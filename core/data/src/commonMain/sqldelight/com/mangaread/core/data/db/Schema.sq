@@ -24,7 +24,15 @@ CREATE TABLE series (
   metadata_checked_at INTEGER,           -- set when enrichment ran but found no match (§9.2)
   title_romaji       TEXT,               -- AniList title in each language, for the display
   title_english      TEXT,               -- title setting (§9) -- falls back to `title` (the
-  title_native       TEXT                -- file-derived name) when a language isn't available
+  title_native       TEXT,               -- file-derived name) when a language isn't available
+  status             TEXT,               -- AniList MediaStatus: FINISHED, RELEASING, ...
+  format             TEXT,               -- AniList MediaFormat: MANGA, NOVEL, ONE_SHOT, ...
+  genres             TEXT,               -- "|"-joined list (AniList genres are plain words)
+  tags               TEXT,               -- "|"-joined list of AniList tag names
+  is_adult           INTEGER,            -- AniList's NSFW flag; null until matched
+  average_score      INTEGER,            -- 0-100, null if AniList has too few ratings
+  site_url           TEXT,               -- link to the series' AniList page
+  banner_path        TEXT                -- app-internal storage path for the banner image (§9)
 );
 
 CREATE TABLE chapter (
@@ -102,7 +110,8 @@ SELECT id, title FROM series WHERE external_id IS NULL;
 -- separate from upsertSeries, whose ON CONFLICT leaves these columns alone on every rescan.
 updateSeriesMetadata:
 UPDATE series SET author = ?, description = ?, cover_path = ?, start_year = ?, external_id = ?,
-  title_romaji = ?, title_english = ?, title_native = ?
+  title_romaji = ?, title_english = ?, title_native = ?, status = ?, format = ?, genres = ?,
+  tags = ?, is_adult = ?, average_score = ?, site_url = ?, banner_path = ?
 WHERE id = ?;
 
 -- Stamped when the enrichment pipeline searched but found no good-enough candidate, so the

@@ -132,7 +132,15 @@ CREATE TABLE series (
   metadata_checked_at INTEGER,           -- set when enrichment ran but found no match (§9.2)
   title_romaji       TEXT,               -- AniList's per-language titles, once matched -- feed
   title_english      TEXT,               -- the "series title" display setting (§9); each falls
-  title_native       TEXT                -- back to `title` when that language isn't available
+  title_native       TEXT,               -- back to `title` when that language isn't available
+  status             TEXT,               -- AniList MediaStatus (FINISHED, RELEASING, ...)
+  format             TEXT,               -- AniList MediaFormat (MANGA, NOVEL, ONE_SHOT, ...)
+  genres             TEXT,               -- "|"-joined (SQLite has no array type)
+  tags               TEXT,               -- "|"-joined
+  is_adult           INTEGER,            -- 0/1
+  average_score      INTEGER,            -- 0-100, null if not enough ratings
+  site_url           TEXT,               -- AniList page for the match
+  banner_path        TEXT                -- wide banner, cached like cover_path; often null (§9)
 );
 
 CREATE TABLE chapter (
@@ -194,7 +202,9 @@ Notes:
   the real table, confirmed on-device against a live 302-series/12399-chapter library with no
   data loss. `2.sqm` (adding `title_romaji`/`title_english`/`title_native`, also Phase 3) hit the
   same retrofit limitation and was verified the same way. Re-enable once there's a real migration
-  history to verify against.
+  history to verify against. `3.sqm` (adding `status`/`format`/`genres`/`tags`/`is_adult`/
+  `average_score`/`site_url`/`banner_path`, also Phase 3) hit the same retrofit limitation and was
+  verified the same way.
 
 ---
 
@@ -804,6 +814,28 @@ scan can't be started on top of an enrichment pass already running. Verified on-
 Re-scan showed "Scanning..." through the file walk, then correctly handed off to "Fetching
 metadata..." until the pass finished. Foreground-triggered only — the periodic background
 `ScanWorker` run has no UI to show an indicator in regardless.
+
+**Extended AniList fields + banner image.** `RemoteWorkDetails` now also carries `status`
+(MediaStatus), `format` (MediaFormat), `genres` (`List<String>`), `tags` (`List<String>`,
+flattened from AniList's `MediaTag` objects to just their names), `isAdult`, `averageScore`
+(0-100), `siteUrl`, and `bannerUrl` - `AniListMetadataProvider.DETAILS_QUERY` requests all of
+them alongside the existing fields. SQLite has no array type, so `genres`/`tags` are stored
+"|"-joined in a single `TEXT` column each (`3.sqm`; pipe chosen since genre/tag names are plain
+words unlikely to contain one) and split back out in `LibraryRepository.toDomain`. The banner
+image reuses the exact same app-internal cover-storage machinery (§9) - `CoverStorage.kt`'s
+`downloadCover`/`downloadBanner` now share a private `downloadImage` helper, so no new
+directory plumbing was needed across `AppGraph`/`MainActivity`/`ScanWorker`/`SeriesViewModel`;
+a banner is written to `<coversDir>/<external_id>_banner.jpg` alongside the existing
+`<external_id>.jpg` cover. Both `MetadataEnricher.enrichPending()` and
+`SeriesViewModel.applyMetadataMatch()` download the banner and pass it into
+`LibraryRepository.applyMetadata`, which writes all 8 new columns - `updateSeriesMetadata`'s
+`WHERE id = ?` update, same as the existing metadata fields, so a rescan's `upsertSeries`
+`ON CONFLICT` still can't clobber it. None of this is surfaced in the library grid yet (no
+`LibraryCard`/`selectLibrary` changes) - it's stored for later UI (e.g. a genre/tag filter, an
+adult-content toggle, a score badge) to build on. Verified on-device: re-matching "Dandadan"
+(AniList id 132029, which has real banner art, unlike some series) populated
+`status='RELEASING'`, `format='MANGA'`, 6 genres, 41 tags, `is_adult=0`, `average_score=82`,
+`site_url`, and wrote a fresh `132029_banner.jpg` to `files/covers/` alongside the cover.
 
 **"Recently added chapters" feed** = a library filter/section backed by the
 `chapter.date_added` query, surfaced in Phase 1 (no dedicated screen, no upstream polling).

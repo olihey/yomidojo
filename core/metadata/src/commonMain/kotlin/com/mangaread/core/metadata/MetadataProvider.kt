@@ -28,4 +28,12 @@ data class RemoteWorkDetails(
     val description: String?,   // HTML stripped, "(Source: …)" removed
     val coverUrl: String?,
     val startYear: Int?,
+    val status: String?,        // AniList MediaStatus: FINISHED, RELEASING, ...
+    val format: String?,        // AniList MediaFormat: MANGA, NOVEL, ONE_SHOT, ...
+    val genres: List<String>,
+    val tags: List<String>,
+    val isAdult: Boolean,
+    val averageScore: Int?,     // 0-100, null if not enough ratings
+    val siteUrl: String?,
+    val bannerUrl: String?,
 )

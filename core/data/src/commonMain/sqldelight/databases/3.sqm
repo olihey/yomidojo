@@ -1,0 +1,11 @@
+-- v3 -> v4: store the remaining AniList fields worth keeping locally (PLAN.md §9) — status,
+-- format, genres/tags, the adult flag, community score, the AniList page link, and a local
+-- path for the downloaded banner image.
+ALTER TABLE series ADD COLUMN status TEXT;
+ALTER TABLE series ADD COLUMN format TEXT;
+ALTER TABLE series ADD COLUMN genres TEXT;
+ALTER TABLE series ADD COLUMN tags TEXT;
+ALTER TABLE series ADD COLUMN is_adult INTEGER;
+ALTER TABLE series ADD COLUMN average_score INTEGER;
+ALTER TABLE series ADD COLUMN site_url TEXT;
+ALTER TABLE series ADD COLUMN banner_path TEXT;

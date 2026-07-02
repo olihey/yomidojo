@@ -199,7 +199,7 @@ class LibraryRepository(db: MangaDatabase) {
      * enrichment pipeline and the user-facing Fix Metadata re-match (PLAN.md §9, §9.1).
      * Deliberately its own query, not routed through [persistSeries]/upsertSeries, whose
      * ON CONFLICT clause leaves these columns untouched on every rescan by design. */
-    suspend fun applyMetadata(seriesId: String, details: RemoteWorkDetails, coverPath: String?) =
+    suspend fun applyMetadata(seriesId: String, details: RemoteWorkDetails, coverPath: String?, bannerPath: String?) =
         withContext(ioDispatcher) {
             q.updateSeriesMetadata(
                 author = details.author,
@@ -210,6 +210,14 @@ class LibraryRepository(db: MangaDatabase) {
                 title_romaji = details.titleRomaji,
                 title_english = details.titleEnglish,
                 title_native = details.titleNative,
+                status = details.status,
+                format = details.format,
+                genres = details.genres.joinToString("|"),
+                tags = details.tags.joinToString("|"),
+                is_adult = if (details.isAdult) 1L else 0L,
+                average_score = details.averageScore?.toLong(),
+                site_url = details.siteUrl,
+                banner_path = bannerPath,
                 id = seriesId,
             )
         }
@@ -243,5 +251,15 @@ class LibraryRepository(db: MangaDatabase) {
         titleRomaji = r.title_romaji,
         titleEnglish = r.title_english,
         titleNative = r.title_native,
+        status = r.status,
+        format = r.format,
+        genres = r.genres.splitList(),
+        tags = r.tags.splitList(),
+        isAdult = r.is_adult == 1L,
+        averageScore = r.average_score?.toInt(),
+        siteUrl = r.site_url,
+        bannerPath = r.banner_path,
     )
+
+    private fun String?.splitList(): List<String> = this?.split("|")?.filter { it.isNotBlank() } ?: emptyList()
 }

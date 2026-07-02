@@ -36,6 +36,15 @@ data class Series(
     val titleRomaji: String? = null,
     val titleEnglish: String? = null,
     val titleNative: String? = null,
+    // Remaining AniList fields worth keeping locally (PLAN.md §9), all null until matched.
+    val status: String? = null,        // AniList MediaStatus: FINISHED, RELEASING, ...
+    val format: String? = null,        // AniList MediaFormat: MANGA, NOVEL, ONE_SHOT, ...
+    val genres: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
+    val isAdult: Boolean = false,
+    val averageScore: Int? = null,     // 0-100
+    val siteUrl: String? = null,
+    val bannerPath: String? = null,    // app-internal storage path for the downloaded banner
 )
 
 data class Chapter(

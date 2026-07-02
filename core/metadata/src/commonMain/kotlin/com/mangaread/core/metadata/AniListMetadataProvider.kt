@@ -109,6 +109,14 @@ class AniListMetadataProvider(
                 description(asHtml: true)
                 startDate { year }
                 coverImage { large }
+                bannerImage
+                status
+                format
+                genres
+                tags { name }
+                isAdult
+                averageScore
+                siteUrl
                 staff(perPage: 25) {
                   edges { role node { name { full } } }
                 }
@@ -135,6 +143,14 @@ private fun MediaDetails.toRemoteWorkDetails() = RemoteWorkDetails(
     description = cleanDescription(description),
     coverUrl = coverImage?.large,
     startYear = startDate?.year,
+    status = status,
+    format = format,
+    genres = genres,
+    tags = tags.map { it.name },
+    isAdult = isAdult,
+    averageScore = averageScore,
+    siteUrl = siteUrl,
+    bannerUrl = bannerImage,
 )
 
 private fun MediaTitle.preferred(): String = english ?: romaji ?: native ?: "Unknown"
@@ -193,8 +209,18 @@ internal fun cleanDescription(raw: String?): String? {
     val description: String? = null,
     val startDate: FuzzyDate? = null,
     val coverImage: CoverImage? = null,
+    val bannerImage: String? = null,
+    val status: String? = null,
+    val format: String? = null,
+    val genres: List<String> = emptyList(),
+    val tags: List<TagDto> = emptyList(),
+    val isAdult: Boolean = false,
+    val averageScore: Int? = null,
+    val siteUrl: String? = null,
     val staff: StaffConnection? = null,
 )
+
+@Serializable private data class TagDto(val name: String)
 
 @Serializable private data class StaffConnection(val edges: List<StaffEdge> = emptyList())
 @Serializable private data class StaffEdge(val role: String? = null, val node: StaffNode)

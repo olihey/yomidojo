@@ -133,7 +133,8 @@ class SeriesViewModel(
             try {
                 val details = metadataProvider.details(work.externalId)
                 val coverPath = downloadCover(coverClient, coversDir, details.externalId, details.coverUrl)
-                repository.applyMetadata(seriesId, details, coverPath)
+                val bannerPath = downloadBanner(coverClient, coversDir, details.externalId, details.bannerUrl)
+                repository.applyMetadata(seriesId, details, coverPath, bannerPath)
                 metadataSearchOpen.value = false
             } catch (t: Throwable) {
                 // Leave the dialog open with its current results — the user can retry.
