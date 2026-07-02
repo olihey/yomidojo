@@ -283,19 +283,20 @@ cover (`coverWidth = 168.dp` x `coverHeight = 240.dp`) straddling the seam — p
 banner, partly over the content below. The cover's gap into the banner and its gap to the right
 (before the title column) are the same value (`coverGap = 12.dp`), so it reads as evenly inset
 rather than off-center; `overlap = bannerHeight - coverGap` is how far the cover+title row is
-pulled up to make that true. Beside the cover, sharing the row's remaining width
-(`Modifier.weight(1f)` on the text column — needed once the genre list below could otherwise run
-past the true available width instead of ellipsizing at it): title (`displayTitle`, §9's language
-setting), author, a status row, and now the description too — moved from a separate full-width
-block into this column specifically so the Continue button (the next thing after this Row) can
-never land above the cover's bottom, no matter how tall the cover gets: both are sized by the
-same Row, whichever of the cover or the text column is taller. The status row shows the release
-year, the AniList status as a colored dot + label (`statusPresentation`: Releasing/blue,
-Finished/green, Not yet released/orange, Hiatus/amber, Cancelled/red — the same plain-`Text`-glyph
-convention as the rest of the app's badges, §7.2, rather than a Material-icons dependency for one
-glyph), and the genre list (comma-joined, `maxLines = 1` + ellipsis so a long list truncates
-instead of wrapping or overflowing). Every field is optional and the header degrades gracefully:
-no banner -> plain `surfaceVariant` backdrop, no cover -> empty placeholder box, no status/genres
+pulled up to make that true. Release year + AniList status (a colored dot + label —
+`statusPresentation`: Releasing/blue, Finished/green, Not yet released/orange, Hiatus/amber,
+Cancelled/red, the same plain-`Text`-glyph convention as the rest of the app's badges, §7.2,
+rather than a Material-icons dependency for one glyph) sit directly under the cover, in its own
+column, since they're compact enough to fit that narrower width. Beside the cover, sharing the
+row's remaining width (`Modifier.weight(1f)` on the text column — needed so the genre list
+ellipsizes at the row's true available width instead of overflowing it): title (`displayTitle`,
+§9's language setting), author, the genre list (comma-joined, `maxLines = 1` + ellipsis — needs
+more width than fits under the cover, which is why it lives here instead of next to the status),
+and the description. The Continue action is a top app bar item (top-right, above the banner,
+next to Fix metadata) rather than part of this header, so the header itself is purely
+informational and the Continue button can never be pushed around by how tall the cover or the
+metadata text ends up being. Every field is optional and the header degrades gracefully: no
+banner -> plain `surfaceVariant` backdrop, no cover -> empty placeholder box, no status/genres
 (e.g. a series matched before §9's status/genre/tag columns existed) -> the row shows just
 whatever it has with no stray separators, no author/description -> those lines just don't render.
 **Implementation note:** the overlap is a custom layout modifier, `overlapAbove(overlap)` — it
@@ -311,7 +312,7 @@ taller, so neither bug can recur regardless of how large the cover or how much m
 grows. Verified on-device against a matched series with a real banner, full status row, and a
 6-genre list (Dandadan) and a matched series with no banner and a partial status (year but no
 `status`/genres, from before those columns existed) — no crash, no clipping, correct fallback in
-each case, cover bottom always above the Continue button.
+each case, Continue showing in the top bar only when an unread chapter exists.
 
 ### 7.4 Responsive (phone → large tablet)
 

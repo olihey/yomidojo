@@ -24,7 +24,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -97,6 +96,10 @@ fun SeriesScreen(
                         IconButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.titleLarge) }
                     },
                     actions = {
+                        // Top-right, above the banner — the header below is purely informational now.
+                        if (nextUnread != null) {
+                            TextButton(onClick = { onChapterClick(nextUnread.id) }) { Text("Continue") }
+                        }
                         TextButton(onClick = viewModel::openMetadataSearch) { Text("Fix metadata") }
                     },
                 )
@@ -106,12 +109,7 @@ fun SeriesScreen(
         Column(Modifier.padding(padding).fillMaxSize()) {
             series?.let { s ->
                 if (!selectionMode) {
-                    SeriesHeader(
-                        series = s,
-                        titleLanguage = titleLanguage,
-                        nextUnread = nextUnread,
-                        onContinueClick = onChapterClick,
-                    )
+                    SeriesHeader(series = s, titleLanguage = titleLanguage)
                 }
             }
             LazyVerticalGrid(
@@ -139,15 +137,15 @@ fun SeriesScreen(
 /**
  * Series screen header: the AniList banner as a full-bleed backdrop, fading into the screen
  * background, with the cover straddling the seam (partly over the banner, partly over the
- * content below) — title, author, status/release row, and description sit beside/under it.
- * Falls back to a plain surface-colored backdrop and a placeholder cover when unmatched.
+ * content below) — release year/status sit under the cover, title/author/genres/description
+ * beside it. The Continue action lives in the top app bar instead (above the banner), so this
+ * header is purely informational. Falls back to a plain surface-colored backdrop and a
+ * placeholder cover when unmatched.
  */
 @Composable
 private fun SeriesHeader(
     series: Series,
     titleLanguage: TitleLanguage,
-    nextUnread: ChapterCard?,
-    onContinueClick: (String) -> Unit,
 ) {
     val bannerHeight = 150.dp
     // The cover's gap above it (into the banner) and its gap to the right (before the title
@@ -184,30 +182,31 @@ private fun SeriesHeader(
             )
         }
         // overlapAbove shifts this row up into the banner and shrinks the space it reserves by
-        // the same amount, so the Continue button below starts right where the row visually
-        // ends — sized to the row's real content (cover vs. the text column, whichever is
-        // taller) instead of a hand-guessed fixed height. The description now lives inside the
-        // text column rather than as a separate full-width block, specifically so growing the
-        // cover keeps its bottom edge above the Continue button: both are governed by the same
-        // Row instead of the cover being able to run past an independently-placed sibling.
+        // the same amount, so the next screen element starts right where the row visually ends —
+        // sized to the row's real content (cover column vs. the text column, whichever is
+        // taller) instead of a hand-guessed fixed height.
         Row(Modifier.fillMaxWidth().overlapAbove(overlap).padding(horizontal = 16.dp)) {
-            Box(
-                Modifier
-                    .width(coverWidth)
-                    .height(coverHeight)
-                    .shadow(6.dp, RoundedCornerShape(8.dp))
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
-            ) {
-                val coverPath = series.coverPath
-                if (coverPath != null) {
-                    AsyncImage(
-                        model = MangaCover(coverPath),
-                        contentDescription = series.displayTitle(titleLanguage),
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.matchParentSize(),
-                    )
+            Column {
+                Box(
+                    Modifier
+                        .width(coverWidth)
+                        .height(coverHeight)
+                        .shadow(6.dp, RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                ) {
+                    val coverPath = series.coverPath
+                    if (coverPath != null) {
+                        AsyncImage(
+                            model = MangaCover(coverPath),
+                            contentDescription = series.displayTitle(titleLanguage),
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.matchParentSize(),
+                        )
+                    }
                 }
+                Spacer(Modifier.height(6.dp))
+                SeriesStatusRow(series.status, series.startYear)
             }
             Spacer(Modifier.width(coverGap))
             Column(Modifier.weight(1f).padding(top = overlap)) {
@@ -221,8 +220,16 @@ private fun SeriesHeader(
                     Spacer(Modifier.height(2.dp))
                     Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Spacer(Modifier.height(6.dp))
-                SeriesStatusRow(series.status, series.startYear, series.genres)
+                if (series.genres.isNotEmpty()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        series.genres.joinToString(", "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 series.description?.let {
                     Spacer(Modifier.height(8.dp))
                     Text(
@@ -232,12 +239,6 @@ private fun SeriesHeader(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-            }
-        }
-        if (nextUnread != null) {
-            Spacer(Modifier.height(12.dp))
-            Button(onClick = { onContinueClick(nextUnread.id) }, modifier = Modifier.padding(horizontal = 16.dp)) {
-                Text("Continue: ${nextUnread.displayName}")
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -258,18 +259,19 @@ private fun Modifier.overlapAbove(overlap: Dp): Modifier = layout { measurable, 
     }
 }
 
-/** Release year + AniList status (§9) as a colored dot + label, plus the genre list — e.g.
- * "2021 · ● Releasing · Action, Comedy, Drama". Genres share the row's remaining width and
- * ellipsize rather than wrap, so a long genre list can't push the row onto a second line. */
+/** Release year + AniList status (§9) as a colored dot + label, e.g. "2021 · ● Releasing" —
+ * sits directly under the cover image, so it wraps rather than truncates if the cover is
+ * narrower than the content (the genre list, which needs more room, lives beside the title
+ * instead). */
 @Composable
-private fun SeriesStatusRow(status: String?, startYear: Int?, genres: List<String>) {
+private fun SeriesStatusRow(status: String?, startYear: Int?) {
     val presentation = statusPresentation(status)
-    if (presentation == null && startYear == null && genres.isEmpty()) return
+    if (presentation == null && startYear == null) return
     val dotColor = MaterialTheme.colorScheme.onSurfaceVariant
     Row(verticalAlignment = Alignment.CenterVertically) {
         startYear?.let {
             Text(it.toString(), style = MaterialTheme.typography.bodySmall, color = dotColor)
-            if (presentation != null || genres.isNotEmpty()) {
+            if (presentation != null) {
                 Text("   •   ", style = MaterialTheme.typography.bodySmall, color = dotColor)
             }
         }
@@ -277,19 +279,6 @@ private fun SeriesStatusRow(status: String?, startYear: Int?, genres: List<Strin
             Text("●", color = color, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.width(4.dp))
             Text(label, color = color, style = MaterialTheme.typography.bodySmall)
-            if (genres.isNotEmpty()) {
-                Text("   •   ", style = MaterialTheme.typography.bodySmall, color = dotColor)
-            }
-        }
-        if (genres.isNotEmpty()) {
-            Text(
-                genres.joinToString(", "),
-                style = MaterialTheme.typography.bodySmall,
-                color = dotColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
         }
     }
 }
