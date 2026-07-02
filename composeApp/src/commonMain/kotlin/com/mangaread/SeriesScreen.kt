@@ -47,8 +47,10 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -148,72 +150,76 @@ private fun SeriesHeader(
     onContinueClick: (String) -> Unit,
 ) {
     val bannerHeight = 150.dp
-    val coverWidth = 108.dp
-    val coverHeight = 154.dp
-    val overlap = 56.dp
+    // The cover's gap above it (into the banner) and its gap to the right (before the title
+    // column) are the same value, so the cover reads as evenly inset rather than off-center.
+    val coverGap = 12.dp
+    val coverWidth = 140.dp
+    val coverHeight = 200.dp
+    // How far the cover+title row is pulled up into the banner, chosen so its remaining visible
+    // gap above the cover equals coverGap — also exactly where the banner gives way to the solid
+    // background, which is why the title column below is nudged down by the same amount.
+    val overlap = bannerHeight - coverGap
 
     Column {
-        // Banner + overlapping cover share one fixed-height Box (bannerHeight below the banner's
-        // own bottom, plus however much of the cover pokes below that seam) — Modifier.padding
-        // rejects negative values, so the overlap is expressed as absolute positioning inside a
-        // correctly-sized Box instead of the more usual negative-offset/negative-padding trick.
-        Box(Modifier.fillMaxWidth().height(bannerHeight + coverHeight - overlap)) {
-            Box(Modifier.fillMaxWidth().height(bannerHeight).align(Alignment.TopStart)) {
-                val bannerPath = series.bannerPath
-                if (bannerPath != null) {
+        Box(Modifier.fillMaxWidth().height(bannerHeight)) {
+            val bannerPath = series.bannerPath
+            if (bannerPath != null) {
+                AsyncImage(
+                    model = MangaCover(bannerPath),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.matchParentSize(),
+                )
+            } else {
+                Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant))
+            }
+            Box(
+                Modifier.matchParentSize().background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.55f to MaterialTheme.colorScheme.background.copy(alpha = 0.55f),
+                        1f to MaterialTheme.colorScheme.background,
+                    ),
+                ),
+            )
+        }
+        // overlapAbove shifts this row up into the banner and shrinks the space it reserves by
+        // the same amount, so the description below starts right where the row visually ends —
+        // sized to the row's real content instead of a hand-guessed fixed height (which clipped
+        // the status line when the text column ran taller than expected).
+        Row(Modifier.fillMaxWidth().overlapAbove(overlap).padding(horizontal = 16.dp)) {
+            Box(
+                Modifier
+                    .width(coverWidth)
+                    .height(coverHeight)
+                    .shadow(6.dp, RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            ) {
+                val coverPath = series.coverPath
+                if (coverPath != null) {
                     AsyncImage(
-                        model = MangaCover(bannerPath),
-                        contentDescription = null,
+                        model = MangaCover(coverPath),
+                        contentDescription = series.displayTitle(titleLanguage),
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.matchParentSize(),
                     )
-                } else {
-                    Box(Modifier.matchParentSize().background(MaterialTheme.colorScheme.surfaceVariant))
                 }
-                Box(
-                    Modifier.matchParentSize().background(
-                        Brush.verticalGradient(
-                            0f to Color.Transparent,
-                            0.55f to MaterialTheme.colorScheme.background.copy(alpha = 0.55f),
-                            1f to MaterialTheme.colorScheme.background,
-                        ),
-                    ),
-                )
             }
-            Row(Modifier.align(Alignment.TopStart).padding(top = bannerHeight - overlap, start = 16.dp, end = 16.dp)) {
-                Box(
-                    Modifier
-                        .width(coverWidth)
-                        .height(coverHeight)
-                        .shadow(6.dp, RoundedCornerShape(8.dp))
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                ) {
-                    val coverPath = series.coverPath
-                    if (coverPath != null) {
-                        AsyncImage(
-                            model = MangaCover(coverPath),
-                            contentDescription = series.displayTitle(titleLanguage),
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.matchParentSize(),
-                        )
-                    }
+            Spacer(Modifier.width(coverGap))
+            Column(Modifier.padding(top = overlap)) {
+                Text(
+                    series.displayTitle(titleLanguage),
+                    style = MaterialTheme.typography.titleLarge,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                series.author?.let {
+                    Spacer(Modifier.height(2.dp))
+                    Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.padding(top = 20.dp)) {
-                    Text(
-                        series.displayTitle(titleLanguage),
-                        style = MaterialTheme.typography.titleLarge,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    series.author?.let {
-                        Spacer(Modifier.height(2.dp))
-                        Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    SeriesStatusRow(series.status, series.startYear)
-                }
+                Spacer(Modifier.height(6.dp))
+                SeriesStatusRow(series.status, series.startYear)
             }
         }
         series.description?.let {
@@ -233,6 +239,20 @@ private fun SeriesHeader(
             }
         }
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+/**
+ * Shifts this layout up by [overlap] and reports [overlap] less height to its parent, so a
+ * sibling placed after it starts exactly where the shifted content visually ends — the dynamic
+ * equivalent of a negative bottom margin. `Modifier.padding` throws `IllegalArgumentException`
+ * on a negative value at runtime, so this goes through a custom layout instead.
+ */
+private fun Modifier.overlapAbove(overlap: Dp): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val overlapPx = overlap.roundToPx().coerceIn(0, placeable.height)
+    layout(placeable.width, placeable.height - overlapPx) {
+        placeable.placeRelative(0, -overlapPx)
     }
 }
 
