@@ -50,6 +50,8 @@ kotlin {
             implementation(libs.androidx.work.runtime)
             implementation(libs.ktor.client.okhttp)
             implementation(libs.coil.network.ktor)
+            implementation(libs.smbj)
+            implementation(libs.androidx.security.crypto)
         }
     }
 }

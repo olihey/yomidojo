@@ -37,14 +37,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val source = SafMangaSource(applicationContext)
+        val localSource = SafMangaSource(applicationContext)
+        val source = ConfigurableMangaSource(localSource)
+        val smbSourceFactory = AndroidSmbSourceFactory(applicationContext)
         SingletonImageLoader.setSafe { ctx ->
             ImageLoader.Builder(ctx)
                 .components {
                     add(Keyer<MangaCover> { cover, _: Options -> cover.model })
-                    add(CoverFetcher.Factory(applicationContext, source))
+                    add(CoverFetcher.Factory(source))
                     add(Keyer<MangaPage> { page, _: Options -> "${page.model}#${page.index}" })
-                    add(PageFetcher.Factory(applicationContext, source))
+                    add(PageFetcher.Factory(source))
                 }
                 // Explicit (rather than relying on Coil's default) so covers/pages extracted
                 // on demand from CBZ/folders are only ever extracted once and survive restarts.
@@ -70,7 +72,7 @@ class MainActivity : ComponentActivity() {
         val appPrefs = AppPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
-        viewModel = LibraryViewModel(repository, scanner, source, prefs, enricher, appPrefs)
+        viewModel = LibraryViewModel(repository, scanner, source, localSource, smbSourceFactory, prefs, enricher, appPrefs)
         readerPrefs = ReaderPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )

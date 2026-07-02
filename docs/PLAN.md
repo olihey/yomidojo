@@ -228,6 +228,90 @@ interface MangaSource {
 scoped bookmark on iOS). The cloud caching/range shim is built only when a real cloud
 source exists (§13).
 
+### 6.1 SMB network-share source
+
+OneDrive-via-SAF turned out to be a dead end — Microsoft disables root exposure for
+personal accounts (confirmed on-device: `com.microsoft.skydrive`'s `StorageAccessProvider`
+is a real, registered `DocumentsProvider`, but returns no roots to the system picker for
+a personal account). SMB is the practical alternative instead: it's how manga libraries
+are actually already hosted (NAS boxes, Windows shares, Hetzner-style storage boxes),
+auth is plain username/password (no OAuth), and the protocol genuinely supports random
+access, unlike a REST-based cloud API.
+
+**Scope: still single-source.** The app keeps its existing single-active-root model
+(one configured `source` row, `LibraryRepository.LOCAL_SOURCE_ID`) — SMB is a second
+*type* for that same one root, picked via the "+" button's "Local folder" / "SMB share"
+chooser (`AddSourceChooserDialog`, `LibraryScreen.kt`). Switching type replaces the
+library, same as switching local folders already does. Full simultaneous multi-source
+(mixed local+SMB in one library) would need `source_id` on `series` (currently only on
+`chapter`) plus a source-management UI — out of scope here.
+
+- `SmbMangaSource` (`composeApp/src/androidMain`) implements `MangaSource` via `smbj`
+  (pure-Java SMB2/3). Locators are plain forward-slash paths relative to the share
+  (`""` = share root) — unlike SAF's content:// URIs, the connection (host/share/
+  credentials) lives on the instance itself, not encoded per-locator. Lazily connects
+  (`SMBClient` → `Connection` → `Session` → `DiskShare`), retries once after
+  reconnecting on a caught I/O failure. `capabilities = RANDOM_ACCESS` — honestly true
+  for SMB (positional reads via `File.read(buffer, offset)`), unlike a REST cloud API.
+- `SmbConfig` (`composeApp/src/commonMain`) holds the non-secret half (host/share/
+  username/rootPath), pipe-joined into the `source.config_json` blob — same convention
+  as genres/tags (§9). The password is deliberately excluded, stored separately via
+  `SmbCredentialStore` (`EncryptedSharedPreferences`, AES256-GCM via Android Keystore) —
+  new territory, since no credential-storage pattern existed in the app before this.
+- `ConfigurableMangaSource` (`composeApp/src/commonMain`) wraps the app's single shared
+  `source` instance behind a swappable delegate, so switching source type takes effect
+  immediately in the running session (not just after a restart) — every existing holder
+  of `source` (Coil fetchers, `LibraryScanner`, `AppGraph`) only depends on the
+  `MangaSource` interface already, so nothing else needed to change.
+- `LibraryViewModel.connectSmb(...)` validates the candidate connection (`canAccess`)
+  *before* persisting/reconfiguring anything, so a bad host/share/credentials can't
+  clobber a working source — called from the connect dialog's own coroutine scope so it
+  can show a real inline error ("Couldn't connect — check host, share, and
+  credentials.") instead of firing blind. Verified on-device with a deliberately wrong
+  password: clean error, dialog stays open, the already-working library untouched.
+
+**Three real, previously-latent bugs surfaced by testing against an actual SMB server**
+(none of these are SMB-specific in cause — SMB just exercises code paths SAF never did):
+
+1. **`upsertSource`'s `ON CONFLICT` never updated `type`** (`Schema.sq`) — switching
+   the single configured row from LOCAL to SMB would silently leave `type` stuck at
+   `"LOCAL"` forever. Fixed by adding `type = excluded.type` to the update clause — a
+   query-text change, not a schema change, so no new `.sqm` migration needed.
+2. **`CoverFetcher`/`PageFetcher` (`composeApp/src/androidMain`) were hardcoded to
+   `SafMangaSource`**, calling `context.contentResolver.openInputStream(Uri.parse(locator))`
+   directly — completely bypassing the `MangaSource.open()` abstraction. `core:reader`'s
+   `PageProvider` (the seemingly "proper" abstraction) is only used for
+   `pageCount`/`pageSize` probing, not actual on-screen rendering — Coil's
+   `AsyncImage(MangaPage(...))` + `PageFetcher` render pages, and `AsyncImage(MangaCover(...))`
+   + `CoverFetcher` render covers. Fixed by narrowing both to the generic `MangaSource`
+   interface and routing reads through `source.open(locator)` — behavior-preserving for
+   the SAF path, and what makes SMB covers/pages work at all.
+3. **`android.os.NetworkOnMainThreadException` crashed the reader on first open.**
+   `CbzPageProvider.create()`/`ImageDirPageProvider.create()`/`loadPage()`/`pageSize()`
+   (`core:reader`) call `MangaSource.open()`/`list()` without an explicit
+   `withContext(ioDispatcher)` — relying on the caller already being off the main
+   thread. SAF's Binder-based reads never tripped Android's StrictMode network check
+   even when this assumption was violated, so the gap stayed completely latent; SMB's
+   raw sockets hit it immediately and hard-crash (unconditional, not just a warning).
+   Fixed by wrapping each in `withContext(ioDispatcher)` inside `core:reader` itself, so
+   correctness no longer depends on every call site getting the dispatcher right.
+
+**Separately, a pre-existing, non-SMB-specific limitation was also hit and mitigated:**
+`CbzPageProvider` deliberately buffers a whole chapter into memory (§9) under the stated
+assumption of a "50MB worst-case CBZ" (§13) — a real, unusually large scan volume
+(~343MB) blew past that and hit `OutOfMemoryError` against the default ~256MB heap. This
+would happen identically for a local file of that size; SMB just happened to be the file
+that surfaced it. Mitigated with `android:largeHeap="true"` in the manifest (raises the
+ceiling; doesn't change the buffer-the-whole-archive design). A real fix (streaming
+decode instead of full buffering) is a larger, separate change — not attempted here.
+
+Verified end-to-end on-device against a real SMB server (a Hetzner Storage Box) with a
+~300-series real library: connect → scan (progress counter live-updating) → library grid
+renders real cover art → open a series → chapter covers render → open a chapter → pages
+render and turn correctly → force-close and relaunch → library persists and reconnects
+automatically without re-prompting, all through several incidental app crashes along the
+way (each fixed in turn per above) without losing the scanned library or its SMB config.
+
 ---
 
 ## 7. Library & series UX
@@ -789,7 +873,7 @@ UI smoke tests (Compose) come later and stay thin; the logic tests above carry t
 | **1 — Local library** | `LocalFileSource` (SAF/bookmarks) + scanner + parser (vol/ch) + DB; **background scan scheduling (Android WorkManager; iOS manual-only)**; library w/ search, sorts, direction toggle, hide-read, view modes; **recently-added chapters feed** | Scan → series/chapters persist, reconcile, reactive; **parser test corpus passes (§14)** |
 | **2 — Reader + series** | `PageProvider` (incl. `pageSize`/spread detection §8), 4 reading modes, **gesture/polish bundle (§8.1)**, progress; series chapter/volume screen; cover badge; **selection mode + bulk read/unread (§7.5)**; **recently-read sort** | Read image + CBZ; resume; bulk-mark; tap zones + volume keys work — **done** |
 | **3 — Metadata** | AniList enrichment + matching + **rate-limited enrichment pipeline (§9.2)** + **Fix metadata re-search (§9.1)** + cover caching (app-internal, §9) | Real covers/descriptions; re-match fixes wrong matches; release-start sort live - done |
-| **4 — Cloud source** | Add OneDrive to *validate the abstraction* + the caching/range shim (incl. CBZ local-temp for non-random-access, §11); responsive + settings polish | A cloud source works without changing scanner/reader |
+| **4 — Cloud source** | ~~Add OneDrive~~ Add SMB (§6.1) to *validate the abstraction* — OneDrive turned out to be a dead end (Microsoft disables SAF root exposure for personal accounts); responsive + settings polish | A second source works without changing scanner/reader — **done for SMB**, see §6.1 |
 | **5 — Read-status sync** | `SyncBackend` over the user's cloud; device-independent keys; LWW merge | Progress/read-state converge across two devices |
 
 *PDF slots in after Phase 2 whenever wanted (§15 → see §16); it blocks nothing.*
@@ -921,6 +1005,10 @@ no source changes. If adding PDF needs the reader or DB to change, a seam leaked
 - **Concurrent scans could wipe applied metadata** — fixed via `libraryWriteMutex`; see §9.2's
   "Fixed" note. Overlapping `LibrarySyncer.sync()` calls used to race on
   `deleteSeriesNotScannedAt`, deleting-then-reinserting rows and losing their AniList matches.
+- **`CbzPageProvider` buffers a whole chapter into memory** (§9, §6.1) — fine up to the
+  assumed "50MB worst-case CBZ" (§13), but a real ~343MB scan volume hit `OutOfMemoryError`
+  even with `android:largeHeap="true"`. Not CBZ-source-specific; any local file that large
+  would do the same. A real fix (streaming decode) is a larger, separate change.
 
 ---
 

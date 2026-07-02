@@ -134,8 +134,27 @@ class LibraryRepository(db: MangaDatabase) {
         )
     }
 
+    /** Same single configured-root row as [saveLocalRoot], but for an SMB share (PLAN.md §6) —
+     * [configBlob] is [com.mangaread.SmbConfig]'s pipe-joined host/share/rootPath/username
+     * (the password lives in encrypted storage, not here). Switching between LOCAL and SMB
+     * reuses the fixed row id, so `type` must actually update on conflict — see `upsertSource`. */
+    suspend fun saveSmbSource(configBlob: String, displayName: String) = withContext(ioDispatcher) {
+        q.upsertSource(
+            id = LOCAL_SOURCE_ID,
+            type = "SMB",
+            display_name = displayName,
+            config_json = configBlob,
+            sync_token = null,
+        )
+    }
+
     suspend fun savedLocalRoot(): String? = withContext(ioDispatcher) {
         q.selectSourceRoot(LOCAL_SOURCE_ID).executeAsOneOrNull()
+    }
+
+    /** "LOCAL" or "SMB" for the single configured root, or null if none configured yet. */
+    suspend fun savedSourceType(): String? = withContext(ioDispatcher) {
+        q.selectSourceType(LOCAL_SOURCE_ID).executeAsOneOrNull()
     }
 
     /**

@@ -1,7 +1,5 @@
 package com.mangaread
 
-import android.content.Context
-import android.net.Uri
 import coil3.ImageLoader
 import coil3.decode.DataSource
 import coil3.decode.ImageSource
@@ -9,26 +7,27 @@ import coil3.fetch.FetchResult
 import coil3.fetch.Fetcher
 import coil3.fetch.SourceFetchResult
 import coil3.request.Options
+import com.mangaread.core.source.MangaSource
 import okio.Buffer
 import okio.BufferedSource
 import okio.FileSystem
 import okio.Path.Companion.toOkioPath
 import okio.buffer
-import okio.source
 import java.io.File
 import java.util.zip.ZipInputStream
 
 /**
  * Resolves a cover model into image bytes (PLAN.md §9 "first page as cover"):
- *   "cbz:<uri>"    → first image entry inside the archive (not yet cached)
- *   "imgdir:<uri>" → first image file in the folder (not yet cached)
- *   anything else  → a cached app-internal file path (already-generated chapter/series cover)
- * Coil caches the result by the model string, so each cover is extracted once.
+ *   "cbz:<locator>"    → first image entry inside the archive (not yet cached)
+ *   "imgdir:<locator>" → first image file in the folder (not yet cached)
+ *   anything else      → a cached app-internal file path (already-generated chapter/series cover)
+ * Coil caches the result by the model string, so each cover is extracted once. Reads go
+ * through [MangaSource] (not a hardcoded Android `ContentResolver`) so this works for any
+ * source implementation (SAF, SMB, ...) — see PLAN.md §6.
  */
 class CoverFetcher(
     private val data: String,
-    private val context: Context,
-    private val source: SafMangaSource,
+    private val source: MangaSource,
 ) : Fetcher {
 
     override suspend fun fetch(): FetchResult {
@@ -55,15 +54,11 @@ class CoverFetcher(
             .filter { !it.isDirectory && it.name.isImageName() }
             .minByOrNull { it.name }
             ?: error("no images in $dirLocator")
-        val stream = context.contentResolver.openInputStream(Uri.parse(first.locator))
-            ?: error("cannot open ${first.locator}")
-        return stream.source().buffer()
+        return source.open(first.locator).buffer()
     }
 
-    private fun firstCbzImage(cbzLocator: String): BufferedSource {
-        val input = context.contentResolver.openInputStream(Uri.parse(cbzLocator))
-            ?: error("cannot open $cbzLocator")
-        ZipInputStream(input.buffered()).use { zis ->
+    private suspend fun firstCbzImage(cbzLocator: String): BufferedSource {
+        ZipInputStream(source.open(cbzLocator).buffer().inputStream()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
                 if (!entry.isDirectory && entry.name.isImageName()) {
@@ -75,12 +70,9 @@ class CoverFetcher(
         error("no image entry in $cbzLocator")
     }
 
-    class Factory(
-        private val context: Context,
-        private val source: SafMangaSource,
-    ) : Fetcher.Factory<MangaCover> {
+    class Factory(private val source: MangaSource) : Fetcher.Factory<MangaCover> {
         override fun create(data: MangaCover, options: Options, imageLoader: ImageLoader): Fetcher =
-            CoverFetcher(data.model, context, source)
+            CoverFetcher(data.model, source)
     }
 }
 

@@ -21,11 +21,21 @@ import io.ktor.client.HttpClient
 class ScanWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        val source = SafMangaSource(applicationContext)
         val database = createMangaDatabase(DatabaseDriverFactory(applicationContext).create())
         val repository = LibraryRepository(database)
 
-        val root = repository.savedLocalRoot() ?: return Result.success()
+        // savedLocalRoot() holds a raw SAF URI for LOCAL, or an SmbConfig blob for SMB —
+        // resolve both the right MangaSource and the right scan locator from `type`.
+        val type = repository.savedSourceType()
+        val configBlob = repository.savedLocalRoot() ?: return Result.success()
+        val smbConfig = if (type == "SMB") SmbConfig.fromBlob(configBlob) ?: return Result.success() else null
+        val source = if (smbConfig != null) {
+            val password = AndroidSmbSourceFactory(applicationContext).loadPassword() ?: ""
+            SmbMangaSource(smbConfig.host, smbConfig.share, smbConfig.username, password)
+        } else {
+            SafMangaSource(applicationContext)
+        }
+        val root = smbConfig?.rootPath ?: configBlob
         if (!source.canAccess(root)) return Result.success() // grant lost; UI will prompt re-grant
 
         return try {

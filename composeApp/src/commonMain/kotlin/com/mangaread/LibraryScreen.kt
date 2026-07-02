@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -40,16 +42,20 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.mangaread.core.data.LibraryCard
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -72,6 +78,21 @@ fun LibraryScreen(
     val viewMode by viewModel.viewMode.collectAsState()
     val selectionMode by viewModel.selectionMode.collectAsState()
     val selectedIds by viewModel.selectedIds.collectAsState()
+
+    var showAddSourceChooser by remember { mutableStateOf(false) }
+    var showSmbDialog by remember { mutableStateOf(false) }
+    val openChooser = { showAddSourceChooser = true }
+
+    if (showAddSourceChooser) {
+        AddSourceChooserDialog(
+            onDismiss = { showAddSourceChooser = false },
+            onPickLocalFolder = { showAddSourceChooser = false; onPickFolder() },
+            onPickSmbShare = { showAddSourceChooser = false; showSmbDialog = true },
+        )
+    }
+    if (showSmbDialog) {
+        SmbConnectDialog(viewModel = viewModel, onDismiss = { showSmbDialog = false })
+    }
 
     Scaffold(
         topBar = {
@@ -110,11 +131,11 @@ fun LibraryScreen(
             }
         },
         floatingActionButton = {
-            if (!selectionMode) FloatingActionButton(onClick = onPickFolder) { Text("+", Modifier.padding(4.dp)) }
+            if (!selectionMode) FloatingActionButton(onClick = openChooser) { Text("+", Modifier.padding(4.dp)) }
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            if (needsReGrant) ReGrantBanner(onPickFolder)
+            if (needsReGrant) ReGrantBanner(openChooser)
             if (cards.isEmpty() && progress == null && query.isBlank() && !needsReGrant) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No series yet — tap + to pick your manga folder.", Modifier.padding(24.dp))
@@ -160,17 +181,107 @@ private fun SelectionTopBar(
 }
 
 @Composable
-private fun ReGrantBanner(onPickFolder: () -> Unit) {
+private fun ReGrantBanner(onReconnect: () -> Unit) {
     Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth()) {
         Row(
             Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Folder access was lost. Re-grant to keep your library updated.", modifier = Modifier.weight(1f))
-            Button(onClick = onPickFolder) { Text("Re-grant") }
+            Text("Source access was lost. Re-grant to keep your library updated.", modifier = Modifier.weight(1f))
+            Button(onClick = onReconnect) { Text("Re-grant") }
         }
     }
+}
+
+/** Entry point for the "+" FAB and the re-grant banner (PLAN.md §6) — a source is either a
+ * local SAF folder or an SMB share; picking either replaces the single configured root. */
+@Composable
+private fun AddSourceChooserDialog(onDismiss: () -> Unit, onPickLocalFolder: () -> Unit, onPickSmbShare: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add library source") },
+        text = {
+            Column {
+                TextButton(onClick = onPickLocalFolder, modifier = Modifier.fillMaxWidth()) { Text("Local folder") }
+                TextButton(onClick = onPickSmbShare, modifier = Modifier.fillMaxWidth()) { Text("SMB share") }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+/** SMB connect dialog (PLAN.md §6) — mirrors [SeriesScreen.kt]'s `FixMetadataDialog`
+ * convention (`AlertDialog` + `OutlinedTextField`s + `TextButton`s). Runs
+ * [LibraryViewModel.connectSmb] in its own scope so a bad host/credentials shows an
+ * inline error instead of silently failing or dismissing. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SmbConnectDialog(viewModel: LibraryViewModel, onDismiss: () -> Unit) {
+    var host by remember { mutableStateOf("") }
+    var share by remember { mutableStateOf("") }
+    var username by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var rootPath by remember { mutableStateOf("") }
+    var connecting by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    AlertDialog(
+        onDismissRequest = { if (!connecting) onDismiss() },
+        title = { Text("Connect to SMB share") },
+        text = {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = host, onValueChange = { host = it }, label = { Text("Host") },
+                    singleLine = true, enabled = !connecting, modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = share, onValueChange = { share = it }, label = { Text("Share") },
+                    singleLine = true, enabled = !connecting, modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = username, onValueChange = { username = it },
+                    label = { Text("Username (blank for anonymous)") },
+                    singleLine = true, enabled = !connecting, modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = password, onValueChange = { password = it }, label = { Text("Password") },
+                    singleLine = true, enabled = !connecting,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = rootPath, onValueChange = { rootPath = it },
+                    label = { Text("Folder within share (optional)") },
+                    singleLine = true, enabled = !connecting, modifier = Modifier.fillMaxWidth(),
+                )
+                if (connecting) CircularProgressIndicator(Modifier.padding(top = 4.dp))
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !connecting && host.isNotBlank() && share.isNotBlank(),
+                onClick = {
+                    connecting = true
+                    error = null
+                    scope.launch {
+                        val displayName = "smb://$host/$share"
+                        val failure = viewModel.connectSmb(host.trim(), share.trim(), username.trim(), password, rootPath.trim(), displayName)
+                        connecting = false
+                        if (failure == null) onDismiss() else error = failure
+                    }
+                },
+            ) { Text("Connect") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !connecting) { Text("Cancel") }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

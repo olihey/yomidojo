@@ -64,16 +64,23 @@ CREATE TABLE reading_progress (
 CREATE INDEX chapter_series_idx ON chapter(series_id);
 CREATE INDEX chapter_date_added_idx ON chapter(date_added);
 
--- Source root (the granted SAF tree) — remembered across restarts ------------
+-- Source root (the granted SAF tree, or an SMB share config) — remembered across
+-- restarts. `type` is included in the ON CONFLICT update so switching the single
+-- configured root from LOCAL to SMB (or back) actually takes effect, not just
+-- display_name/config_json. -----------------------------------------------------
 upsertSource:
 INSERT INTO source(id, type, display_name, config_json, sync_token)
 VALUES (?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
+  type = excluded.type,
   display_name = excluded.display_name,
   config_json = excluded.config_json;
 
 selectSourceRoot:
 SELECT config_json FROM source WHERE id = ?;
+
+selectSourceType:
+SELECT type FROM source WHERE id = ?;
 
 -- Upsert (idempotent re-scan) -----------------------------------------------
 upsertSeries:

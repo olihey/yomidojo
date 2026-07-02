@@ -33,6 +33,11 @@ class LibraryViewModel(
     private val repository: LibraryRepository,
     scanner: LibraryScanner,
     private val source: MangaSource,
+    /** The original local (SAF) source instance — reused as-is when switching back to a
+     * local folder, since it's just a stateless wrapper around the platform Context. */
+    private val localSource: MangaSource,
+    /** Null on platforms without SMB support yet (PLAN.md §6) — [onSmbConnect] no-ops. */
+    private val smbSourceFactory: SmbSourceFactory?,
     private val prefs: LibraryPreferences,
     private val enricher: MetadataEnricher,
     private val appPreferences: AppPreferences,
@@ -105,9 +110,19 @@ class LibraryViewModel(
 
     init {
         scope.launch {
-            val root = repository.savedLocalRoot()
-            _canRescan.value = root != null
-            if (root != null && !source.canAccess(root)) _needsReGrant.value = true
+            // savedLocalRoot() holds a raw SAF root URI for a LOCAL source, or an SmbConfig
+            // blob for an SMB one — resolveScanRoot() picks the right locator to actually
+            // scan/canAccess out of either. Cold start with a saved SMB config rebuilds the
+            // connection before the canAccess check, so re-grant detection runs against the
+            // right backend instead of whatever SafMangaSource MainActivity defaulted to.
+            val type = repository.savedSourceType()
+            val configBlob = repository.savedLocalRoot()
+            if (type == "SMB" && configBlob != null) {
+                reconfigureSmbSource(configBlob, smbSourceFactory?.loadPassword() ?: "")
+            }
+            val scanRoot = resolveScanRoot(type, configBlob)
+            _canRescan.value = scanRoot != null
+            if (scanRoot != null && !source.canAccess(scanRoot)) _needsReGrant.value = true
         }
         scope.launch { sort.collect { prefs.sort = it } }
         scope.launch { ascending.collect { prefs.ascending = it } }
@@ -117,14 +132,50 @@ class LibraryViewModel(
     fun onFolderPicked(rootLocator: String, displayName: String) {
         scope.launch {
             repository.saveLocalRoot(rootLocator, displayName)
+            (source as? ConfigurableMangaSource)?.reconfigure(localSource)
             _canRescan.value = true
             _needsReGrant.value = false
             runScan(rootLocator)
         }
     }
 
+    /** Mirrors [onFolderPicked] for an SMB share (PLAN.md §6), called from the connect
+     * dialog's own coroutine scope so it can show a real error instead of firing blind.
+     * Validates the candidate connection *before* persisting/reconfiguring anything, so a
+     * bad host/share/credentials can't clobber a working source or half-commit — returns
+     * an error message on failure, or null on success (scan already kicked off by then). */
+    suspend fun connectSmb(host: String, share: String, username: String, password: String, rootPath: String, displayName: String): String? {
+        val factory = smbSourceFactory ?: return "SMB isn't supported on this platform"
+        val candidate = factory.build(host, share, username, password)
+        if (!candidate.canAccess(rootPath)) return "Couldn't connect — check host, share, and credentials."
+        repository.saveSmbSource(SmbConfig(host, share, username, rootPath).toBlob(), displayName)
+        factory.savePassword(password)
+        (source as? ConfigurableMangaSource)?.reconfigure(candidate)
+        _canRescan.value = true
+        _needsReGrant.value = false
+        runScan(rootPath)
+        return null
+    }
+
     fun rescan() {
-        scope.launch { repository.savedLocalRoot()?.let { runScan(it) } }
+        scope.launch {
+            val type = repository.savedSourceType()
+            val configBlob = repository.savedLocalRoot()
+            resolveScanRoot(type, configBlob)?.let { runScan(it) }
+        }
+    }
+
+    private fun resolveScanRoot(type: String?, configBlob: String?): String? {
+        if (configBlob == null) return null
+        return if (type == "SMB") SmbConfig.fromBlob(configBlob)?.rootPath ?: "" else configBlob
+    }
+
+    private fun reconfigureSmbSource(configBlob: String, password: String) {
+        val factory = smbSourceFactory ?: return
+        val config = SmbConfig.fromBlob(configBlob) ?: return
+        (source as? ConfigurableMangaSource)?.reconfigure(
+            factory.build(config.host, config.share, config.username, password),
+        )
     }
 
     fun toggleDirection() { ascending.value = !ascending.value }

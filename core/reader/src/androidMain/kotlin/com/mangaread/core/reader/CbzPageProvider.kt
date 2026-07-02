@@ -3,7 +3,9 @@ package com.mangaread.core.reader
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import com.mangaread.core.domain.ioDispatcher
 import com.mangaread.core.source.MangaSource
+import kotlinx.coroutines.withContext
 import okio.buffer
 import java.io.ByteArrayInputStream
 import java.util.zip.ZipInputStream
@@ -59,12 +61,17 @@ class CbzPageProvider private constructor(
     }
 
     companion object {
-        suspend fun create(cbzLocator: String, source: MangaSource): CbzPageProvider {
+        suspend fun create(cbzLocator: String, source: MangaSource): CbzPageProvider = withContext(ioDispatcher) {
+            // Explicit dispatch, not just suspend — MangaSource.open() itself is non-blocking
+            // to call, but reading from the returned Source can be genuine socket I/O (SMB,
+            // PLAN.md §6), which StrictMode kills outright with NetworkOnMainThreadException
+            // if it happens on the caller's thread (SAF's Binder-based reads never tripped this,
+            // so the gap stayed latent until a real network source existed).
             val bytes = source.open(cbzLocator).buffer().use { it.readByteArray() }
             val entries = parseCentralDirectory(bytes)
                 .filter { !it.name.endsWith("/") && it.name.isImageName() }
                 .sortedBy { it.name }
-            return CbzPageProvider(bytes, entries)
+            CbzPageProvider(bytes, entries)
         }
 
         /** Walks the ZIP central directory (found via the End-Of-Central-Directory record at

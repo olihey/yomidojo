@@ -1,7 +1,5 @@
 package com.mangaread
 
-import android.content.Context
-import android.net.Uri
 import coil3.ImageLoader
 import coil3.decode.DataSource
 import coil3.decode.ImageSource
@@ -9,18 +7,19 @@ import coil3.fetch.FetchResult
 import coil3.fetch.Fetcher
 import coil3.fetch.SourceFetchResult
 import coil3.request.Options
+import com.mangaread.core.source.MangaSource
 import okio.Buffer
 import okio.BufferedSource
 import okio.FileSystem
 import okio.buffer
-import okio.source
 import java.util.zip.ZipInputStream
 
-/** Resolves one page of a chapter (image dir or CBZ) into image bytes for the reader pager. */
+/** Resolves one page of a chapter (image dir or CBZ) into image bytes for the reader
+ * pager. Reads go through [MangaSource] (not a hardcoded Android `ContentResolver`) so
+ * this works for any source implementation (SAF, SMB, ...) — see PLAN.md §6. */
 class PageFetcher(
     private val page: MangaPage,
-    private val context: Context,
-    private val source: SafMangaSource,
+    private val source: MangaSource,
 ) : Fetcher {
 
     override suspend fun fetch(): FetchResult {
@@ -43,27 +42,21 @@ class PageFetcher(
             .sortedBy { it.name }
             .getOrNull(index)
             ?: error("no page $index in $dirLocator")
-        val stream = context.contentResolver.openInputStream(Uri.parse(entry.locator))
-            ?: error("cannot open ${entry.locator}")
-        return stream.source().buffer()
+        return source.open(entry.locator).buffer()
     }
 
-    private fun cbzImageAt(cbzLocator: String, index: Int): BufferedSource {
+    private suspend fun cbzImageAt(cbzLocator: String, index: Int): BufferedSource {
         val names = mutableListOf<String>()
-        context.contentResolver.openInputStream(Uri.parse(cbzLocator))?.use { input ->
-            ZipInputStream(input.buffered()).use { zis ->
-                var entry = zis.nextEntry
-                while (entry != null) {
-                    if (!entry.isDirectory && entry.name.isImageName()) names += entry.name
-                    entry = zis.nextEntry
-                }
+        ZipInputStream(source.open(cbzLocator).buffer().inputStream()).use { zis ->
+            var entry = zis.nextEntry
+            while (entry != null) {
+                if (!entry.isDirectory && entry.name.isImageName()) names += entry.name
+                entry = zis.nextEntry
             }
-        } ?: error("cannot open $cbzLocator")
+        }
         val target = names.sorted().getOrNull(index) ?: error("no page $index in $cbzLocator")
 
-        val input = context.contentResolver.openInputStream(Uri.parse(cbzLocator))
-            ?: error("cannot open $cbzLocator")
-        ZipInputStream(input.buffered()).use { zis ->
+        ZipInputStream(source.open(cbzLocator).buffer().inputStream()).use { zis ->
             var entry = zis.nextEntry
             while (entry != null) {
                 if (entry.name == target) return Buffer().apply { write(zis.readBytes()) }
@@ -73,12 +66,9 @@ class PageFetcher(
         error("no page $index in $cbzLocator")
     }
 
-    class Factory(
-        private val context: Context,
-        private val source: SafMangaSource,
-    ) : Fetcher.Factory<MangaPage> {
+    class Factory(private val source: MangaSource) : Fetcher.Factory<MangaPage> {
         override fun create(data: MangaPage, options: Options, imageLoader: ImageLoader): Fetcher =
-            PageFetcher(data, context, source)
+            PageFetcher(data, source)
     }
 }
 
