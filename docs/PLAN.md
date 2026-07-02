@@ -269,12 +269,33 @@ all three view modes the same way the read-status badge is.
 
 ### 7.3 Series screen (chapter / volume) — navigation push
 
-Selecting a series pushes a dedicated screen: cover, title, author, description, overall
-progress, a **Continue** action targeting the next unread chapter, and **chapters grouped
-by volume** (volume headers from the parser; flat list when absent). Chapter order is
-ascending (Chapter 1 first). Each row shows read-state in the badge language.
+Selecting a series pushes a dedicated screen: a banner-backed header (below), a **Continue**
+action targeting the next unread chapter, and **chapters grouped by volume** (volume headers
+from the parser; flat list when absent). Chapter order is ascending (Chapter 1 first). Each
+row shows read-state in the badge language.
 
 Also on this screen: **Fix metadata** (§9.1) and entry into **selection mode** (§7.5).
+
+**Header (Phase 3, once banners existed to show — §9's `bannerPath`).** `SeriesHeader` in
+`SeriesScreen.kt`: the AniList banner as a full-bleed backdrop (`bannerHeight = 150.dp`,
+`ContentScale.Crop`) fading into the screen background via a vertical gradient scrim, with the
+cover straddling the seam — partly over the banner, partly over the content below
+(`overlap = 56.dp` of the cover's `coverHeight = 154.dp` sits above the banner's bottom edge).
+Beside the cover: title (`displayTitle`, §9's language setting), author, and a status row —
+release year plus the AniList status as a colored dot + label (`statusPresentation`:
+Releasing/blue, Finished/green, Not yet released/orange, Hiatus/amber, Cancelled/red; matches
+the "colored text and icon" ask using the same plain-`Text`-glyph convention as the rest of the
+app's badges, §7.2, rather than pulling in a Material-icons dependency for one glyph).
+Description sits below, then the Continue button. Every field is optional and the header
+degrades gracefully for an unmatched series: no banner -> plain `surfaceVariant` backdrop, no
+cover -> empty placeholder box, no status/year -> the status row omits itself entirely, no
+author/description -> those lines just don't render. **Implementation note:** the overlap is
+built as absolute positioning inside one `Box` sized to `bannerHeight + coverHeight - overlap`,
+not the more obvious negative-`offset` + negative-`padding` combo — `Modifier.padding` throws
+`IllegalArgumentException` on a negative value at runtime (crashed on first on-device test),
+so don't reach for that trick here again. Verified on-device against both a matched series with
+a real banner (Dandadan) and a fully unmatched one (no external_id at all) to confirm the
+fallback path doesn't crash.
 
 ### 7.4 Responsive (phone → large tablet)
 
