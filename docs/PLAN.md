@@ -996,43 +996,213 @@ stuck on the locally-cached first page.
 **Goal:** reading progress and read/unread state follow the user across their devices
 (iOS, Android, multiple of each). Opt-in.
 
+**Status (design finalized 2026-07-03, not yet built — Phase 5, §15).** `core/sync`'s
+`SyncBackend` interface + `ProgressKey`/`ProgressRecord` are stubbed but unused today: no
+concrete backend, nothing wired into `composeApp`. The design below is fully specified,
+including the identity/merge edge cases found while designing it; what follows replaces the
+original sketch (AniList-id-only primary key, OneDrive-changelog transport) with the refined
+version. Notably, **the read/match side needs zero schema changes** — `series.sort_title`,
+`series.metadata_provider`, and `series.external_id` already exist and already carry exactly
+what the design below needs.
+
 **The trap — identity.** Local row IDs derive from *source + locator*, which differ per
-device: the same manga can be local on one device and OneDrive on another, at different
-paths. So sync **must not key on the local id.** It keys on a *device-independent*
-identity:
-
-- **Primary:** `external_id` (AniList) **+ volume/chapter number** (from the parser) once
-  the series is matched.
-- **Fallback:** normalized `sort_title` **+ volume/chapter number** when unmatched.
-
-**`sort_title` normalization is a frozen, specified algorithm** (same discipline as the ID
-hash): Unicode NFC → lowercase → strip punctuation → collapse internal whitespace → trim.
-Both devices must compute it identically or the fallback key won't match. The fallback is
-explicitly **best-effort**: two distinct works with colliding normalized titles, or the same
-work stored under differently-worded folder names on two devices, can mis-match or fail to
-match. Matched series (primary key) are reliable; unmatched series are reconciled on a
-best-effort basis and converge once both devices match the series in §9.
-
-Read/unread (the `completed` flag) is the reliable unit. Page-level position can sync too
-but is **best-effort**, since the underlying files may differ across devices.
-
-**Merge:** per-key **last-write-wins on `updated_at`** (already stored). Each device emits
-its progress changes with timestamps; merge keeps the newest per key. No central locking;
-fine for personal, offline-first use — devices read offline and reconcile on reconnect.
-
-**Transport — pluggable `SyncBackend`** (mirrors the Source philosophy):
+device: the same manga can be local on one device and SMB on another, at different paths. So
+sync **must not key on the local id.** It keys on a *device-independent* identity:
 
 ```kotlin
-interface SyncBackend {
-    suspend fun pull(since: SyncCursor?): List<ProgressRecord>   // device-independent keys
-    suspend fun push(changes: List<ProgressRecord>): SyncCursor
+data class ProgressKey(
+    val provider: String?,        // "ANILIST" | "KITSU" | null -- scopes externalId's namespace
+    val externalId: String?,      // primary when matched; only comparable within the same provider
+    val normalizedTitle: String,  // fallback key = series.sort_title, already frozen (below)
+    val volume: Double?,
+    val number: Double?,
+)
+```
+
+`provider` matters because AniList and Kitsu IDs are separate numbering spaces — an
+`externalId` alone would let a Kitsu id and an unrelated AniList id of the same value collide
+as if they were the same chapter. `sort_title` normalization is a frozen, specified algorithm
+(same discipline as the ID hash): Unicode NFC → lowercase → strip punctuation → collapse
+internal whitespace → trim (`normalizeSortTitle`, `core/domain/Ids.kt`). Both devices already
+compute it identically since it's written at scan time.
+
+**Matching two records as "the same chapter" — three cases, not a single key comparison:**
+
+1. **Same provider on both sides, ids equal** → match. The reliable path.
+2. **Same provider on both sides, ids differ** → never match, regardless of title. A hard
+   disagreement from the more authoritative signal (the provider's own id) must never be
+   overridden by the weaker one (a title that happens to also match) — this guards against
+   two genuinely different works that happen to share an exact title (a real occurrence in
+   manga — reboots, unrelated works reusing a name).
+3. **Different providers, or an id missing on one/both sides** → fall back to
+   `normalizedTitle` + `volume` + `number` agreement. This is also the deliberate *bridge*:
+   the same real series matched via AniList on one device and Kitsu on another has no shared
+   id space, so title agreement is what lets their progress converge at all.
+
+Read/unread (the `completed` flag) is the reliable unit everywhere. Page-level position
+(`lastPageIndex`) syncs too but is explicitly best-effort, since the underlying files (and
+therefore page counts) may differ across devices.
+
+**Grouping records before merge.** A merge pass sees `local ∪ remote` records and must
+partition them into groups that all refer to the same real chapter *before* last-write-wins
+runs once per group — a two-pass algorithm, not a single hashmap keyed one way:
+
+```kotlin
+/** Partitions every record touching this sync pass into groups that all refer to the
+ * same real chapter, so last-write-wins can then run once per group. */
+fun resolveSyncGroups(records: List<ProgressRecord>): List<List<ProgressRecord>> {
+    // Pass 1 -- hard grouping (cases 1 & 2): group by (provider, externalId) where both
+    // are non-null. Two records land in the same group only if they're EQUAL on this key --
+    // same-provider disagreement never merges here, by construction of a plain grouping.
+    val (hard, unresolved) = records.partition { it.key.provider != null && it.key.externalId != null }
+    val hardGroups: List<List<ProgressRecord>> = hard
+        .groupBy { it.key.provider to it.key.externalId }
+        .values.toList()
+
+    // Pass 2 -- title bridge (case 3): treat each hard group as one unit (they already
+    // agree on title/volume/number) plus every still-unresolved record, then group by
+    // (normalizedTitle, volume, number).
+    data class Unit(val titleKey: Triple<String, Double?, Double?>, val members: List<ProgressRecord>)
+    val units = hardGroups.map { Unit(it.first().key.titleTriple(), it) } +
+        unresolved.map { Unit(it.key.titleTriple(), listOf(it)) }
+
+    return units.groupBy { it.titleKey }.values.map { bucket ->
+        // Guard: if this title bucket contains two DIFFERENT hard groups sharing the same
+        // provider, that's a same-provider conflict (case 2) hiding inside a title match --
+        // refuse to bridge ANYTHING in this bucket rather than guess which side is "right."
+        val providerConflict = bucket.flatMap { it.members }
+            .filter { it.key.provider != null }
+            .groupBy { it.key.provider }
+            .any { (_, group) -> group.map { it.key.externalId }.distinct().size > 1 }
+
+        if (providerConflict) bucket.map { it.members } else listOf(bucket.flatMap { it.members })
+    }.flatten()
 }
 ```
 
-First realistic implementation: **the user's own cloud storage** — reuse the cloud-source
-plumbing built for OneDrive to store a small progress changelog the devices pull, merge,
-and push. No server to host, no accounts. Future backends: a hosted service, or AniList
-write-back for matched series (chapter-count granularity only).
+**Worked example of the guard:** a title bucket for `"attack on titan"` contains
+`(ANILIST, 16498)`, `(ANILIST, 99999)` (a genuine same-provider conflict), and one untagged
+title-only record. There's no principled way to know which of the two conflicting AniList
+entries the untagged record belongs to, so none of the three get bridged — each merges
+independently instead of guessing. Rare in practice: it needs an exact title collision *and*
+one of the colliding devices having matched two different real entries under the same
+provider.
+
+**Merge:** per group, **last-write-wins on `updatedAt`**, tiebroken by `deviceId` (descending)
+on an exact tie:
+
+```kotlin
+fun winner(group: List<ProgressRecord>): ProgressRecord =
+    group.maxWithOrNull(compareBy({ it.updatedAt }, { it.deviceId }))!!
+```
+
+The tiebreak isn't decorative metadata — it's needed for determinism. `markSeriesProgress`/
+`markChaptersProgress` (`LibraryRepository.kt`) compute `now` **once** and stamp every row in
+a bulk "mark as read" operation with the identical timestamp, so exact `updatedAt` ties are
+routine, not a rare edge case. Without a deterministic tiebreak, two devices computing the
+same merge independently could each pick a *different* winner for a tied key and permanently
+disagree — a real oscillation bug, not just a cosmetic one. `deviceId` is otherwise inert:
+it plays no role once a tie is broken, and no role in matching identity at all.
+
+**Applying a winner locally, without losing what can't be applied.** Two new queries resolve
+a synced key back to a local `chapter_id` — both trivial, since (per the Status note above)
+no new columns are needed:
+
+```sql
+-- Primary: resolve via the matched-provider identity.
+selectChapterIdByProviderKey:
+SELECT c.id FROM chapter c JOIN series s ON s.id = c.series_id
+WHERE s.metadata_provider = ? AND s.external_id = ? AND c.volume IS ? AND c.number IS ?;
+
+-- Fallback: resolve via the frozen normalized title (already `sort_title`, case 3).
+selectChapterIdByTitleKey:
+SELECT c.id FROM chapter c JOIN series s ON s.id = c.series_id
+WHERE s.sort_title = ? AND c.volume IS ? AND c.number IS ?;
+```
+
+A winning record for a chapter this device hasn't scanned yet (the file lives only on
+another device) must still round-trip through the next `push()` untouched — dropping it just
+because this device can't resolve it locally would silently erase another device's progress.
+So `ProgressSyncCoordinator.sync()` pushes the **full winners list**, not just the subset that
+resolved to a local chapter:
+
+```kotlin
+suspend fun applySyncedProgress(winners: List<ProgressRecord>) = withContext(ioDispatcher) {
+    q.transaction {
+        winners.forEach { record ->
+            val chapterId = resolveLocalChapterId(record.key) ?: return@forEach // not on this device (yet) -- stays in the merged set pushed back regardless
+            q.upsertProgressIfNewer(chapterId, record.lastPageIndex.toLong(),
+                if (record.completed) 1 else 0, record.updatedAt, record.deviceId)
+        }
+    }
+}
+```
+
+`upsertProgressIfNewer` — a guarded variant of the existing `upsertProgress` — so a stale
+remote record can never clobber a fresher local write even inside one transaction (SQLite
+3.35+'s `WHERE` clause on `DO UPDATE`):
+
+```sql
+upsertProgressIfNewer:
+INSERT INTO reading_progress(chapter_id, last_page_index, completed, updated_at, device_id)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(chapter_id) DO UPDATE SET
+  last_page_index = excluded.last_page_index, completed = excluded.completed,
+  updated_at = excluded.updated_at, device_id = excluded.device_id
+WHERE excluded.updated_at > reading_progress.updated_at;
+```
+
+**Pre-existing gap this surfaces:** `markProgress`/`markChaptersProgress`/`markSeriesProgress`
+(`LibraryRepository.kt`) all hardcode `device_id = null` today — harmless while nothing reads
+that column, but sync needs a real one. A per-install UUID, generated once and persisted via
+`AppPreferences` (settings key-value store, not a schema column — same "pure preference, no
+relational need" reasoning already used for per-series reading mode, §8).
+
+**Storage format — one JSON file, not an event log.** Realistic `reading_progress` volume
+(low thousands of rows even for a large library) comfortably fits one blob — an
+append-only changelog would need compaction for no real benefit at this scale:
+
+```json
+{
+  "version": 1,
+  "records": [
+    { "provider": "ANILIST", "externalId": "16498", "normalizedTitle": "attack on titan",
+      "volume": null, "number": 139.0, "completed": true, "lastPageIndex": 0,
+      "updatedAt": 1735689600000, "deviceId": "3f9a2b7e-..." }
+  ]
+}
+```
+
+`version` lets a future format change be detected and migrated explicitly rather than
+silently misparsed — same discipline as the frozen ID hash and `sort_title` normalization.
+`push` uploads this as a full replacement each sync, not a delta: a single-blob transport has
+no notion of "append," so the caller (`ProgressSyncCoordinator`) must merge before pushing the
+complete reconciled set, not just its own device's changes.
+
+**Transport — pluggable `SyncBackend`** (mirrors the Source philosophy) unchanged:
+
+```kotlin
+interface SyncBackend {
+    suspend fun pull(since: SyncCursor?): List<ProgressRecord>
+    suspend fun push(changes: List<ProgressRecord>): SyncCursor   // full reconciled set, see above
+}
+```
+
+**Chosen first backend: Google Drive's `appDataFolder`** (the `drive.appdata` OAuth scope) —
+not the original sketch's "reuse the OneDrive cloud-source plumbing," which is now stale:
+OneDrive-via-SAF was abandoned as a library source entirely (§6.1, Microsoft disables SAF root
+exposure for personal accounts), and in any case `MangaSource` is read-only, built for
+scanning manga files, not writing sync data. `appDataFolder` is a hidden per-app bucket inside
+the *user's own* Drive — invisible in their normal Drive UI, reachable over plain REST/JSON
+via the same Ktor client style already used for AniList/Kitsu. This is a better fit for "no
+server to host, no accounts" than a hosted service (Firebase/Supabase) would be: it's the
+user's existing Google account and storage, not a new third-party service to operate. The
+real cost is OAuth2 itself — a per-platform sign-in flow (Android has a native SDK; iOS
+needs its own, deferred with the rest of iOS per §12), token refresh, and one-time Google
+Cloud Console app registration. The refresh token is stored the same way `SmbCredentialStore`
+already stores the SMB password: `EncryptedSharedPreferences`, AES256-GCM via Android
+Keystore. Future backends remain possible without touching this design: a hosted service, or
+AniList write-back for matched series (chapter-count granularity only, deferred per §16).
 
 **Dependencies this places earlier:** keep `reading_progress` timestamped (done) and ensure
 series carry the canonical/normalized sync identity. Matching (§9) strengthens sync;
