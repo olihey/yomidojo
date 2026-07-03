@@ -148,7 +148,9 @@ fun LibraryScreen(
                     Text("No series found in this library yet.", Modifier.padding(24.dp))
                 }
             } else {
-                if (!selectionMode) LibraryControls(viewModel, query, sort, ascending, filter)
+                // Always rendered, even in selection mode -- hiding it used to shift every cover
+                // up by its height the instant a long-press entered selection mode.
+                LibraryControls(viewModel, query, sort, ascending, filter)
                 val onClick: (String) -> Unit = { id ->
                     if (selectionMode) viewModel.toggleSelected(id) else onSeriesClick(id)
                 }
