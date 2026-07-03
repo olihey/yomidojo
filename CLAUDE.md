@@ -1,4 +1,4 @@
-# Manga Reader (KMP)
+# MangaZuki (KMP)
 
 Cross-platform manga reader — Kotlin Multiplatform + Compose Multiplatform,
 SQLDelight, AniList metadata. **Android now; iOS deferred until a Mac is available**

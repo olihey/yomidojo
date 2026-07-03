@@ -7,7 +7,7 @@
     <!-- CbzPageProvider deliberately buffers a whole chapter into memory (PLAN.md §9) — real
          high-res scan volumes can exceed the default ~256MB heap and OOM, hence largeHeap. -->
     <application
-        android:label="Manga Reader"
+        android:label="MangaZuki"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
