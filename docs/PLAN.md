@@ -797,6 +797,16 @@ request at a time, respects a conservative interval (well under 90/min), and **b
 429** (honor `Retry-After`, exponential otherwise). Enrichment is best-effort and resumable —
 a series with no `external_id` yet simply shows file-derived data until its turn comes up.
 
+**Progress counter (added 2026-07-03).** `MetadataEnricher.enrichPending` takes an
+`onProgress: (done, total) -> Unit` callback, invoked after each series is processed —
+matched, checked-no-match, or failed all count as "done" — since `total` (the size of the
+`unmatchedSeries()` snapshot) is known upfront. `LibraryViewModel` surfaces this as
+`EnrichProgress(done, total)`, replacing the old plain `enriching: Boolean`, so the top bar
+reads "Fetching metadata… N / M" instead of a bare spinner. Never invoked when nothing's
+pending, so null-vs-non-null on the progress `StateFlow` still doubles as the "is it running"
+check the UI needs elsewhere (hiding Re-scan, etc). `ScanWorker`'s background call doesn't
+pass a callback (defaults to a no-op) since it has no UI to update.
+
 **Fixed: concurrent scans could wipe applied metadata (found and fixed 2026-07-02).**
 `LibrarySyncer.sync()`'s cleanup step, `deleteSeriesNotScannedAt(scanAt)`, deletes any series row
 whose `last_scanned` doesn't match *that* scan's own timestamp. If two `sync()` calls ever

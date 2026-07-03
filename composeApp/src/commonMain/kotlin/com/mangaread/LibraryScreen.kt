@@ -67,7 +67,7 @@ fun LibraryScreen(
     titleLanguage: TitleLanguage,
 ) {
     val progress by viewModel.progress.collectAsState()
-    val enriching by viewModel.enriching.collectAsState()
+    val enrichProgress by viewModel.enrichProgress.collectAsState()
     val canRescan by viewModel.canRescan.collectAsState()
     val needsReGrant by viewModel.needsReGrant.collectAsState()
     val cards by viewModel.cards.collectAsState()
@@ -113,10 +113,10 @@ fun LibraryScreen(
                                 CircularProgressIndicator(Modifier.size(20.dp))
                                 Text("Scanning… ${progress!!.seriesFound} series, ${progress!!.chaptersFound} chapters")
                             }
-                        } else if (enriching) {
+                        } else if (enrichProgress != null) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 CircularProgressIndicator(Modifier.size(20.dp))
-                                Text("Fetching metadata…")
+                                Text("Fetching metadata… ${enrichProgress!!.done} / ${enrichProgress!!.total}")
                             }
                         } else {
                             Text("Library (${cards.size})")
@@ -124,7 +124,7 @@ fun LibraryScreen(
                     },
                     actions = {
                         TextButton(onClick = viewModel::cycleViewMode) { Text(viewMode.name.lowercase().replaceFirstChar { it.uppercase() }) }
-                        if (canRescan && progress == null && !enriching) TextButton(onClick = viewModel::rescan) { Text("Re-scan") }
+                        if (canRescan && progress == null && enrichProgress == null) TextButton(onClick = viewModel::rescan) { Text("Re-scan") }
                         TextButton(onClick = onSettingsClick) { Text("Settings") }
                     },
                 )

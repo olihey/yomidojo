@@ -25,10 +25,16 @@ class MetadataEnricher(
     private val coversDir: String,
 ) {
     /** Serialized via [libraryWriteMutex] — see its doc for why this can't overlap a scan
-     * (or another enrichment pass) touching the same database. */
-    suspend fun enrichPending() = libraryWriteMutex.withLock {
+     * (or another enrichment pass) touching the same database. [onProgress] reports (done,
+     * total) after each series is processed — matched, checked-no-match, or failed all count
+     * as "done", so the count always reaches `total` — for the "Fetching metadata… N / M" UI
+     * (PLAN.md §9.2). Never invoked when there's nothing pending, so callers can use a null-vs-
+     * non-null progress value to know whether enrichment is actually running. */
+    suspend fun enrichPending(onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }) = libraryWriteMutex.withLock {
         val provider = providerFor()
-        for ((seriesId, rawTitle) in repository.unmatchedSeries()) {
+        val pending = repository.unmatchedSeries()
+        val total = pending.size
+        pending.forEachIndexed { index, (seriesId, rawTitle) ->
             try {
                 val query = cleanSearchQuery(rawTitle)
                 val match = bestMatch(query, provider.search(query))
@@ -37,15 +43,16 @@ class MetadataEnricher(
                     // network/rate-limit failure below, which leaves the series "never checked"
                     // (not "checked, no match") so it's retried rather than stuck showing ✕.
                     repository.markMetadataChecked(seriesId)
-                    continue
+                } else {
+                    val details = provider.details(match.externalId)
+                    val coverPath = downloadCover(coverClient, coversDir, details.externalId, details.coverUrl)
+                    val bannerPath = downloadBanner(coverClient, coversDir, details.externalId, details.bannerUrl)
+                    repository.applyMetadata(seriesId, details, coverPath, bannerPath)
                 }
-                val details = provider.details(match.externalId)
-                val coverPath = downloadCover(coverClient, coversDir, details.externalId, details.coverUrl)
-                val bannerPath = downloadBanner(coverClient, coversDir, details.externalId, details.bannerUrl)
-                repository.applyMetadata(seriesId, details, coverPath, bannerPath)
             } catch (t: Throwable) {
                 // Best-effort — leave this one unmatched, try again next pass.
             }
+            onProgress(index + 1, total)
         }
     }
 }
