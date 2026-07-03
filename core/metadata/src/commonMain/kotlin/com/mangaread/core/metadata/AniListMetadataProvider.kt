@@ -96,6 +96,7 @@ class AniListMetadataProvider(
                   title { romaji english native }
                   startDate { year }
                   coverImage { large }
+                  format
                 }
               }
             }
@@ -131,6 +132,7 @@ private fun MediaSummary.toRemoteWork() = RemoteWork(
     title = title.preferred(),
     coverUrl = coverImage?.large,
     startYear = startDate?.year,
+    format = format,
 )
 
 private fun MediaDetails.toRemoteWorkDetails() = RemoteWorkDetails(
@@ -201,6 +203,7 @@ internal fun cleanDescription(raw: String?): String? {
     val title: MediaTitle,
     val startDate: FuzzyDate? = null,
     val coverImage: CoverImage? = null,
+    val format: String? = null,
 )
 
 @Serializable private data class DetailsData(val Media: MediaDetails? = null)

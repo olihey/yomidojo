@@ -16,6 +16,10 @@ data class RemoteWork(
     val title: String,
     val coverUrl: String?,
     val startYear: Int?,
+    /** Canonical format string, normalized to AniList's MediaFormat values (MANGA, NOVEL,
+     * ONE_SHOT, ...) regardless of provider — see [RemoteWorkDetails.format]. Shown as a byline
+     * in the Fix Metadata search results so a result's type is visible before applying it. */
+    val format: String? = null,
 )
 
 data class RemoteWorkDetails(

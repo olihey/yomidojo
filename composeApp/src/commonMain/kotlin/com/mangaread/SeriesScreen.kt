@@ -445,7 +445,11 @@ private fun MetadataCandidateRow(work: RemoteWork, onClick: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Column {
             Text(work.title, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            work.startYear?.let { Text(it.toString(), style = MaterialTheme.typography.bodySmall) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FormatPill(work.format)
+                if (work.format != null && work.startYear != null) Spacer(Modifier.width(6.dp))
+                work.startYear?.let { Text(it.toString(), style = MaterialTheme.typography.bodySmall) }
+            }
         }
     }
 }

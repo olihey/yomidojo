@@ -106,6 +106,7 @@ private fun KitsuResource.toRemoteWork() = RemoteWork(
     title = attributes.preferredTitle(),
     coverUrl = attributes.posterImage?.large,
     startYear = attributes.startYear(),
+    format = normalizeFormat(attributes.subtype),
 )
 
 private fun KitsuSingleResponse.toRemoteWorkDetails(): RemoteWorkDetails {
