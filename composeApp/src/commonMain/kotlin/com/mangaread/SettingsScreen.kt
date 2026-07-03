@@ -85,7 +85,7 @@ fun SettingsScreen(
             TopAppBar(
                 title = { Text("Settings") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.titleLarge) }
+                    IconButton(onClick = onBack) { BackIcon() }
                 },
             )
         },

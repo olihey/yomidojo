@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -500,10 +501,18 @@ private fun BoxScope.ReaderChrome(
     Row(
         Modifier.align(Alignment.TopStart).fillMaxWidth().background(Color.Black.copy(alpha = 0.6f))
             .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(end = 12.dp),
+            // Matches TopAppBar's own built-in 4.dp start inset before its navigation icon
+            // (SeriesScreen/SettingsScreen), so the back arrow sits at the same horizontal
+            // position whether the bar behind it is a real TopAppBar or this custom overlay.
+            .padding(start = 4.dp, end = 12.dp)
+            // Material3's TopAppBar has a fixed 64.dp container height with its navigation
+            // icon centered inside; without this, this Row shrinks to its content (~48.dp,
+            // set by the IconButton's touch target), so the icon centers ~8.dp higher than
+            // on TopAppBar-based screens. Matching the height matches the icon's position.
+            .heightIn(min = 64.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onBack) { Text("←", color = Color.White, style = MaterialTheme.typography.titleLarge) }
+        IconButton(onClick = onBack) { BackIcon(tint = Color.White) }
         Column(Modifier.weight(1f)) {
             if (seriesTitle.isNotBlank()) {
                 Text(seriesTitle, color = Color.White, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)

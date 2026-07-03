@@ -94,7 +94,7 @@ fun SeriesScreen(
                 TopAppBar(
                     title = { Text(series?.displayTitle(titleLanguage) ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     navigationIcon = {
-                        IconButton(onClick = onBack) { Text("←", style = MaterialTheme.typography.titleLarge) }
+                        IconButton(onClick = onBack) { BackIcon() }
                     },
                     actions = {
                         // Top-right, above the banner — the header below is purely informational now.
