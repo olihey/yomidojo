@@ -26,23 +26,13 @@ class KitsuStatusFormatTest {
         assertEquals("MANGA", normalizeFormat("manga"))
         assertEquals("MANGA", normalizeFormat("manhwa"))
         assertEquals("MANGA", normalizeFormat("manhua"))
+        // doujin (fan-made derivative works) and oel (Original English Language) aren't
+        // filtered out of search results (unlike an earlier version of this provider) — both
+        // still fold into the generic MANGA format pill, same as manhwa/manhua.
+        assertEquals("MANGA", normalizeFormat("doujin"))
+        assertEquals("MANGA", normalizeFormat("oel"))
         assertEquals("NOVEL", normalizeFormat("novel"))
         assertEquals("ONE_SHOT", normalizeFormat("oneshot"))
-    }
-
-    /** Search-time filter (§9.3): "manga, webtoon, or light novel" only — doujin (fan-made
-     * derivative works) and oel (Original English Language) are real Kitsu subtypes (confirmed
-     * live) that fall outside those categories and must not show up as match candidates. */
-    @Test
-    fun searchable_subtype_excludes_doujin_and_oel() {
-        assertEquals(true, isSearchableSubtype("manga"))
-        assertEquals(true, isSearchableSubtype("manhwa"))
-        assertEquals(true, isSearchableSubtype("manhua"))
-        assertEquals(true, isSearchableSubtype("novel"))
-        assertEquals(true, isSearchableSubtype("oneshot"))
-        assertEquals(false, isSearchableSubtype("doujin"))
-        assertEquals(false, isSearchableSubtype("oel"))
-        assertEquals(true, isSearchableSubtype("something_future"), "unrecognized subtypes aren't hidden")
     }
 
     @Test
