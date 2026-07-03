@@ -213,6 +213,11 @@ class LibraryRepository(db: MangaDatabase) {
      * a suspiciously small result before deleting the rest (PLAN.md §9.2). */
     suspend fun seriesCount(): Long = withContext(ioDispatcher) { q.selectSeriesCount().executeAsOne() }
 
+    /** Whether [seriesId] is already in the library -- lets [com.mangaread.LibrarySyncer] tell a
+     * brand-new discovery from a rescan of a series it already knows about. */
+    suspend fun seriesExists(seriesId: String): Boolean =
+        withContext(ioDispatcher) { q.seriesExists(seriesId).executeAsOne() }
+
     /** Settings -> Reset library (PLAN.md §7.1): wipes every series/chapter/progress row and the
      * configured source, so the app returns to its pre-first-scan state. Only touches the DB —
      * cached cover/banner files and the image loader's cache live on disk and are cleared by the

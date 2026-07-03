@@ -506,6 +506,46 @@ free, and a rescan self-heals already-scanned libraries without a migration (`up
 `ON CONFLICT` already overwrites `display_name` every scan). Verified on-device against the
 real library: `chaper_0.cbz` → `Chaper 0`, `chaper_18.5.cbz` → `Chaper 18.5`.
 
+**Series title from ComicInfo.xml on first discovery (added 2026-07-03).** A newly scanned
+series still defaults to its folder name (unchanged), but if its first CBZ chapter (by
+volume/number — deterministic regardless of the source's own listing order, `core:scanner`'s
+`FilenameParser` already extracts these) carries a `ComicInfo.xml` sidecar with a `<Series>`
+element, that name replaces the folder name instead. Checked against **only that one file** —
+never every CBZ in the folder, and never on a later rescan of a series that already exists (a new
+`seriesExists` query in `Schema.sq`/`LibraryRepository` lets `LibrarySyncer.sync()` tell "just
+discovered" apart from "already in the library" before deciding whether to look). This keeps an
+established title from ever flip-flopping between folder name and `ComicInfo.xml` name across
+scans, mirroring how `upsertSeries`'s `ON CONFLICT` otherwise always re-applies whatever title the
+scanner hands it.
+
+`LibraryScanner.comicInfoSeriesTitle(cbzLocator)` (`core:scanner`) does the lookup: a new
+`internal expect suspend fun readComicInfoXml(...)` opens the CBZ and walks its ZIP entries with a
+plain forward `ZipInputStream` scan (mirrors `CoverFetcher.firstCbzImage` — no need for
+`CbzArchive`'s central-directory random-access machinery here, since this only ever runs once per
+newly discovered series) looking for `ComicInfo.xml`; `parseComicInfoSeriesTitle(xml)` then pulls
+the `<Series>` element out with a plain regex rather than a full XML parser (the field is always a
+simple flat text element in the ComicInfo schema — one dedicated parser dependency isn't worth it
+for that), unescaping the five standard XML entities. The Android `actual` wraps the read in
+`ioDispatcher` for the same reason as `CbzArchive.open()` (§6.1's bug #3 — SMB's raw sockets throw
+`NetworkOnMainThreadException` if this runs on the caller's thread). The iOS `actual` returns null
+for now (§12) — the series just keeps its folder-derived title there, same as before this feature
+existed. Both `ScanWorker` and the foreground `LibraryViewModel` path share this since both
+already go through `LibrarySyncer`. Verified via a new `ComicInfoTest` (`core:scanner`) covering
+extraction, entity-unescaping, and the missing/blank cases; the ZIP-reading half is Android-only
+(`java.util.zip`) and untested at the unit level, consistent with `CbzArchive`'s own
+`ComicInfo.xml` handling (§6.2), which has the same gap for the same reason (no Robolectric in
+this project, and Android's real `XmlPullParser`/zip stack isn't available to a plain JVM test).
+
+**Bug found and fixed during on-device verification.** A first pass matched the `ComicInfo.xml`
+ZIP entry by exact name only; changed to match by base name, case-insensitively, since some CBZ
+tools nest content under a wrapping folder. Verified against the real library (temporary logging,
+removed after): deleted one already-scanned series' row directly from the pulled `manga.db`
+(`adb exec-out run-as com.mangaread cat databases/manga.db`, same pull technique as prior
+sessions) to force it through the first-discovery path again, then re-scanned and confirmed via
+logcat that its first CBZ's `ComicInfo.xml` (a real 108-page release) was found, read, and its
+`<Series>` value ("Unnie, I like you!") correctly replaced the underscore-mangled folder name
+("Unnie_ I like you_") in the DB.
+
 ### 7.4 Responsive (phone → large tablet)
 
 `GridCells.Adaptive` reflows both the library grid and the per-volume chapter grid by

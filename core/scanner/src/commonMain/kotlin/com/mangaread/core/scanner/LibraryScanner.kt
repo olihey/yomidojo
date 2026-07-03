@@ -66,6 +66,17 @@ class LibraryScanner(private val source: MangaSource) {
         }
     }
 
+    /**
+     * Best-effort series name from [cbzLocator]'s `ComicInfo.xml` sidecar. [LibrarySyncer] calls
+     * this only when a series is discovered for the very first time, against only that series'
+     * first CBZ chapter -- never on a later rescan, and never checking a second CBZ if the first
+     * has no usable `ComicInfo.xml`, so an established title can never flip-flop or cost a scan
+     * more than one extra file read. Null if there's no `ComicInfo.xml`, no `<Series>` element,
+     * or the file can't be read at all.
+     */
+    suspend fun comicInfoSeriesTitle(cbzLocator: String): String? =
+        readComicInfoXml(source, cbzLocator)?.let(::parseComicInfoSeriesTitle)
+
     private fun imageDirChapter(seriesId: String, e: SourceEntry, name: String, pages: Int, now: Long): Chapter {
         val parsed = FilenameParser.parse(name)
         return Chapter(

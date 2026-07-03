@@ -1,8 +1,11 @@
 package com.mangaread
 
 import com.mangaread.core.data.LibraryRepository
+import com.mangaread.core.domain.ChapterFormat
+import com.mangaread.core.domain.normalizeSortTitle
 import com.mangaread.core.domain.nowEpochMillis
 import com.mangaread.core.scanner.LibraryScanner
+import com.mangaread.core.scanner.ScannedSeries
 import kotlinx.coroutines.sync.withLock
 
 /**
@@ -24,9 +27,13 @@ class LibrarySyncer(
         var series = 0
         var chapters = 0
         scanner.scan(rootLocator, scanAt).collect { scanned ->
-            repository.persistSeries(scanned.series, scanned.chapters)
+            // Only a brand-new series gets the ComicInfo.xml naming pass -- an already-known
+            // series (even one being rescanned right now) keeps whatever title it has, so this
+            // can never flip-flop on a later scan.
+            val toPersist = if (repository.seriesExists(scanned.series.id)) scanned else withComicInfoTitle(scanned)
+            repository.persistSeries(toPersist.series, toPersist.chapters)
             series++
-            chapters += scanned.chapters.size
+            chapters += toPersist.chapters.size
             onProgress(series, chapters)
         }
         // Only after a successful, complete scan — prune removed series/chapters. But a scan
@@ -39,5 +46,20 @@ class LibrarySyncer(
         } else {
             println("LibrarySyncer: skipping prune — this scan found $series series vs $previousCount already in the library")
         }
+    }
+
+    /**
+     * A freshly discovered series defaults to its folder name, but if its first CBZ chapter (by
+     * volume/number, so this is deterministic regardless of the source's own listing order)
+     * carries a `ComicInfo.xml` with a `<Series>` name, that replaces it -- checked against only
+     * that one file, per [LibraryScanner.comicInfoSeriesTitle]'s contract.
+     */
+    private suspend fun withComicInfoTitle(scanned: ScannedSeries): ScannedSeries {
+        val firstCbz = scanned.chapters
+            .filter { it.format == ChapterFormat.CBZ }
+            .minWithOrNull(compareBy({ it.volume ?: Double.MAX_VALUE }, { it.number ?: Double.MAX_VALUE }, { it.locator }))
+            ?: return scanned
+        val comicInfoTitle = scanner.comicInfoSeriesTitle(firstCbz.locator) ?: return scanned
+        return scanned.copy(series = scanned.series.copy(title = comicInfoTitle, sortTitle = normalizeSortTitle(comicInfoTitle)))
     }
 }

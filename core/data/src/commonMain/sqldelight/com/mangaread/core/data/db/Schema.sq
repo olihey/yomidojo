@@ -110,6 +110,12 @@ SELECT * FROM series ORDER BY sort_title ASC;
 selectSeriesById:
 SELECT * FROM series WHERE id = ?;
 
+-- Whether a series row already exists, so a first-time scan can distinguish "just discovered"
+-- from "already in the library" (LibrarySyncer's ComicInfo.xml title override runs only once,
+-- on discovery -- never on a later rescan of an existing series).
+seriesExists:
+SELECT EXISTS(SELECT 1 FROM series WHERE id = ?);
+
 -- Series not yet matched to AniList — the enrichment pipeline's work queue (§9.2).
 selectUnmatchedSeries:
 SELECT id, title FROM series WHERE external_id IS NULL;
