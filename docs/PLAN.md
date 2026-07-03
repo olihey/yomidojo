@@ -540,7 +540,7 @@ this project, and Android's real `XmlPullParser`/zip stack isn't available to a 
 ZIP entry by exact name only; changed to match by base name, case-insensitively, since some CBZ
 tools nest content under a wrapping folder. Verified against the real library (temporary logging,
 removed after): deleted one already-scanned series' row directly from the pulled `manga.db`
-(`adb exec-out run-as com.mangaread cat databases/manga.db`, same pull technique as prior
+(`adb exec-out run-as com.oliver.heyme.mangazuki cat databases/manga.db`, same pull technique as prior
 sessions) to force it through the first-discovery path again, then re-scanned and confirmed via
 logcat that its first CBZ's `ComicInfo.xml` (a real 108-page release) was found, read, and its
 `<Series>` value ("Unnie, I like you!") correctly replaced the underscore-mangled folder name
@@ -1520,5 +1520,11 @@ no source changes. If adding PDF needs the reader or DB to change, a seam leaked
 - **Build target:** **Android only for now** (no Mac); iOS deferred to a bring-up task once a
   Mac + Xcode + CI exist (§12, §16). All phases below are scoped to Android; Phase 5's
   "two devices" means two Android devices until iOS lands.
+- **Package name:** `com.oliver.heyme.mangazuki`, applied to every module's `namespace`,
+  `composeApp`'s `applicationId`, and the AppAuth redirect scheme/manifest placeholder
+  (2026-07-03) — renamed from `com.mangaread` alongside the app rebrand to MangaZuki.
+  Changing `applicationId` makes this a new app to Android/the OAuth client registration:
+  any already-configured Google Cloud OAuth client's package name + debug keystore SHA-1
+  must be re-registered under the new package name.
 
 No open decisions remain. The plan is build-ready for Phase 0 on Android.

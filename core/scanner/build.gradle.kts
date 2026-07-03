@@ -23,7 +23,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.mangaread.core.scanner"
+    namespace = "com.oliver.heyme.mangazuki.core.scanner"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     defaultConfig {
         minSdk = libs.versions.android.minSdk.get().toInt()

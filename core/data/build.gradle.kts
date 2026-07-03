@@ -37,7 +37,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.mangaread.core.data"
+    namespace = "com.oliver.heyme.mangazuki.core.data"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
 }
@@ -45,7 +45,7 @@ android {
 sqldelight {
     databases {
         create("MangaDatabase") {
-            packageName.set("com.mangaread.core.data.db")
+            packageName.set("com.oliver.heyme.mangazuki.core.data.db")
             // UPSERT (ON CONFLICT DO UPDATE) for idempotent re-scan reconcile (PLAN.md §5)
             // needs SQLite >= 3.24, so we compile against the 3.24 dialect rather than the
             // SQLDelight default (3.18). RUNTIME NOTE: Android ships SQLite 3.24+ only on

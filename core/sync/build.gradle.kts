@@ -33,7 +33,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.mangaread.core.sync"
+    namespace = "com.oliver.heyme.mangazuki.core.sync"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
 }

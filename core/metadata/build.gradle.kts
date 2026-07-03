@@ -26,7 +26,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.mangaread.core.metadata"
+    namespace = "com.oliver.heyme.mangazuki.core.metadata"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
 }

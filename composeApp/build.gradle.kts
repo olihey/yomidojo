@@ -76,11 +76,11 @@ kotlin {
 }
 
 android {
-    namespace = "com.mangaread"
+    namespace = "com.oliver.heyme.mangazuki"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.mangaread"
+        applicationId = "com.oliver.heyme.mangazuki"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
@@ -89,7 +89,7 @@ android {
         // its redirect-catching activity with this placeholder -- required for the manifest
         // merge to succeed at all, independent of whether real OAuth credentials are wired in
         // yet. Reverse-domain package name, the standard AppAuth-on-Android convention.
-        manifestPlaceholders["appAuthRedirectScheme"] = "com.mangaread"
+        manifestPlaceholders["appAuthRedirectScheme"] = "com.oliver.heyme.mangazuki"
         buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", "\"${localProperties.getProperty("GOOGLE_OAUTH_CLIENT_ID", "")}\"")
     }
 
