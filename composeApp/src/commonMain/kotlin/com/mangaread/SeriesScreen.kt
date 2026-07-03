@@ -212,6 +212,8 @@ private fun SeriesHeader(
                 }
                 Spacer(Modifier.height(6.dp))
                 StatusRow(series.status, series.startYear)
+                Spacer(Modifier.height(4.dp))
+                FormatPill(series.format)
             }
             Spacer(Modifier.width(coverGap))
             Column(Modifier.weight(1f).padding(top = overlap)) {

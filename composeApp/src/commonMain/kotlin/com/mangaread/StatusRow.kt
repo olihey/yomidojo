@@ -48,6 +48,34 @@ private fun statusPresentation(status: String?): Pair<String, Color>? = when (st
     else -> null
 }
 
+/** [Series.format] -> (display label, pastel background color) for the format pill below
+ * [StatusRow]. AniList's `MediaFormat` enum doesn't distinguish manhwa/manhua from manga
+ * (`KitsuMetadataProvider.normalizeFormat` folds both into `MANGA`, PLAN.md §9.3), so only these
+ * three values ever actually occur; null for an unmatched series or an unrecognized value. */
+private fun formatPresentation(format: String?): Pair<String, Color>? = when (format) {
+    "MANGA" -> "Manga" to Color(0xFF64B5F6)
+    "NOVEL" -> "Novel" to Color(0xFFBA68C8)
+    "ONE_SHOT" -> "One-shot" to Color(0xFFFFB74D)
+    else -> null
+}
+
+/** Series format pill (e.g. "Manga") — opaque colored background, black text (deliberately
+ * distinct from [StatusRow]'s dot-and-label style so the two aren't confused at a glance). Sits
+ * directly under [StatusRow] in the series header. Renders nothing for an unmatched series or an
+ * unrecognized format value. */
+@Composable
+fun FormatPill(format: String?, modifier: Modifier = Modifier) {
+    val (label, color) = formatPresentation(format) ?: return
+    Text(
+        label,
+        modifier = modifier
+            .background(color, RoundedCornerShape(4.dp))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        color = Color.Black,
+        style = MaterialTheme.typography.labelSmall,
+    )
+}
+
 /** [Series.metadataProvider] -> its display attribution ("Data provided by AniList") — null
  * for an unmatched series (never stamped) or an unrecognized value (future-proofing). */
 private fun providerAttribution(providerId: String?): String? = when (providerId) {
