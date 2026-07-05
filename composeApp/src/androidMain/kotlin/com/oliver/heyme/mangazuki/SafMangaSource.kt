@@ -2,6 +2,7 @@ package com.oliver.heyme.mangazuki
 
 import android.content.Context
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
 import android.util.Log
 import com.oliver.heyme.mangazuki.core.domain.SourceCapability
@@ -9,12 +10,14 @@ import com.oliver.heyme.mangazuki.core.domain.ioDispatcher
 import com.oliver.heyme.mangazuki.core.source.ChangeEvent
 import com.oliver.heyme.mangazuki.core.source.ChangeSet
 import com.oliver.heyme.mangazuki.core.source.MangaSource
+import com.oliver.heyme.mangazuki.core.source.RandomAccessHandle
 import com.oliver.heyme.mangazuki.core.source.SourceEntry
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.withContext
 import okio.Source
 import okio.source
+import java.nio.ByteBuffer
 
 /**
  * Android Storage Access Framework source (PLAN.md §6, §12). Locators are tree-document
@@ -25,7 +28,12 @@ import okio.source
 class SafMangaSource(private val context: Context) : MangaSource {
 
     override val id: String = "local"
-    override val capabilities: Set<SourceCapability> = setOf(SourceCapability.RANDOM_ACCESS)
+    // A document backed by real on-device storage exposes a real, seekable file descriptor via
+    // openFileDescriptor(), so a large CBZ can be read in pieces instead of buffered whole --
+    // without this, a big (~300MB+) chapter throws OutOfMemoryError in CbzArchive.openInMemory,
+    // the same problem RANGE_READ already solves for SmbMangaSource (PLAN.md §17).
+    override val capabilities: Set<SourceCapability> =
+        setOf(SourceCapability.RANDOM_ACCESS, SourceCapability.RANGE_READ)
 
     override suspend fun canAccess(rootLocator: String): Boolean = withContext(ioDispatcher) {
         val uri = Uri.parse(rootLocator)
@@ -75,6 +83,31 @@ class SafMangaSource(private val context: Context) : MangaSource {
         val stream = context.contentResolver.openInputStream(Uri.parse(locator))
             ?: error("Cannot open $locator")
         stream.source()
+    }
+
+    /** One open [ParcelFileDescriptor] serving every [RandomAccessHandle.readAt] call (PLAN.md
+     * §17), mirroring [SmbMangaSource]'s single-handle-per-file approach. Uses
+     * [java.nio.channels.FileChannel.read] with an explicit position (a true positional pread,
+     * not seek-then-read) so it stays correct even if a caller ever reads concurrently --
+     * `CbzArchiveCache` already serializes all reads through one mutex, but this matches SMB's
+     * approach rather than relying on that. */
+    override suspend fun openRandomAccess(locator: String): RandomAccessHandle = withContext(ioDispatcher) {
+        val pfd = context.contentResolver.openFileDescriptor(Uri.parse(locator), "r")
+            ?: error("Cannot open $locator")
+        val stream = ParcelFileDescriptor.AutoCloseInputStream(pfd)
+        object : RandomAccessHandle {
+            override suspend fun readAt(offset: Long, length: Int): ByteArray = withContext(ioDispatcher) {
+                val buffer = ByteBuffer.allocate(length)
+                var totalRead = 0
+                while (totalRead < length) {
+                    val n = stream.channel.read(buffer, offset + totalRead)
+                    if (n <= 0) break
+                    totalRead += n
+                }
+                if (totalRead == length) buffer.array() else buffer.array().copyOf(totalRead)
+            }
+            override fun close() = stream.close()
+        }
     }
 
     override suspend fun changesSince(token: String?): ChangeSet = ChangeSet(emptyList(), null)

@@ -22,15 +22,18 @@ private fun String.isImageName(): Boolean =
  * central directory sits at the end, so random access needs a seekable handle — [open] picks
  * one of two [Backing]s:
  *
- * - [InMemoryBacking]: reads the whole archive into memory once (bounded, since only one
- *   chapter is ever open at a time — PLAN.md §13's worst-case CBZ) and parses the ZIP
+ * - [InMemoryBacking]: reads the whole archive into memory once (assumed bounded, since only one
+ *   chapter is ever open at a time — PLAN.md §13's worst-case CBZ, though a real ~343MB chapter
+ *   proved that assumption wrong and threw `OutOfMemoryError`, PLAN.md §17) and parses the ZIP
  *   **central directory** (a plain index at the end of the file, no decompression needed) to
- *   get every wanted entry's exact local-header offset. Used for any source without
- *   [SourceCapability.RANGE_READ] (e.g. local SAF, where reading it all up front is cheap).
+ *   get every wanted entry's exact local-header offset. Used only for a source without
+ *   [SourceCapability.RANGE_READ] or without a known [fileSize] — as of PLAN.md §17's fix, that's
+ *   no real source in this app anymore (both local SAF and SMB declare it), just a safety net.
  * - [RangedBacking]: for a source where downloading a whole chapter just to show one page is the
- *   real bottleneck (SMB over a WAN link, PLAN.md §6.2) — reads only the central directory (via
- *   two small positional reads: a tail window, then the exact central-directory range it points
- *   at) and then only each page's own bytes, on demand, as requested.
+ *   real bottleneck (SMB over a WAN link, PLAN.md §6.2 — and, since PLAN.md §17, any large local
+ *   CBZ too) — reads only the central directory (via two small positional reads: a tail window,
+ *   then the exact central-directory range it points at) and then only each page's own bytes,
+ *   on demand, as requested.
  *
  * Both feed the same [ZipInputStream]-based decompression, so entry offsets/sizes always come
  * from the central directory, never re-derived from a stream: an earlier version tried to derive

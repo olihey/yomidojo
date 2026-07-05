@@ -1568,15 +1568,24 @@ no source changes. If adding PDF needs the reader or DB to change, a seam leaked
 - **Concurrent scans could wipe applied metadata** — fixed via `libraryWriteMutex`; see §9.2's
   "Fixed" note. Overlapping `LibrarySyncer.sync()` calls used to race on
   `deleteSeriesNotScannedAt`, deleting-then-reinserting rows and losing their AniList matches.
-- **`CbzPageProvider` buffers a whole chapter into memory** (§9, §6.1) — fine up to the
-  assumed "50MB worst-case CBZ" (§13), but a real ~343MB scan volume hit `OutOfMemoryError`
-  even with `android:largeHeap="true"`. Not CBZ-source-specific; any local file that large
-  would do the same. A real fix (streaming decode) is a larger, separate change. **For an
-  SMB source specifically, this is now avoided via range reads (§6.2)** — but a huge
-  chapter over SMB still opens slowly (~140s for the 343MB/196-page case) since
-  `ReaderViewModel.init` computes every page's size with one sequential positional-read
-  round-trip per page before showing anything; parallelizing was deferred pending
-  confidence in smbj's concurrent-read thread-safety on a shared handle.
+- **`CbzPageProvider` buffers a whole chapter into memory — fixed for local files too
+  (2026-07-05).** Assumed bounded by the "50MB worst-case CBZ" (§13), but a real ~343MB
+  chapter scanned from local (SAF) storage hit `OutOfMemoryError` even with
+  `android:largeHeap="true"` when the user actually opened it, crashing the reader
+  (`CbzArchive.openInMemory`). `SafMangaSource` now also declares `RANGE_READ` and
+  implements `openRandomAccess` via `ContentResolver.openFileDescriptor`'s real, seekable
+  file descriptor (`FileChannel.read(buffer, position)`, a true positional pread, mirroring
+  `SmbMangaSource`'s single-handle-per-file approach) — the same fix already in place for
+  SMB (§6.2), just not wired up for local storage until this large a chapter actually
+  surfaced it. `CbzArchive` picks the ranged path automatically whenever a source declares
+  `RANGE_READ` and the chapter's scanned `size` is known, so both source types now avoid the
+  whole-file buffer for any chapter, not just huge ones. **Still open:** `ReaderViewModel.init`
+  computes every page's size with one sequential positional-read round-trip per page before
+  showing anything, which is what made a huge chapter over SMB slow to open (~140s for the
+  343MB/196-page case, §6.2) — parallelizing was deferred pending confidence in smbj's
+  concurrent-read thread-safety on a shared handle. The same per-page-sequential cost now
+  also applies to a huge local CBZ, though local reads are fast enough that this hasn't
+  been observed to matter in practice the way it did over SMB.
 
 ---
 
