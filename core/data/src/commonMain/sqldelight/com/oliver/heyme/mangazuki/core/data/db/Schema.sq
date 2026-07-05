@@ -65,6 +65,18 @@ CREATE TABLE reading_progress (
 CREATE INDEX chapter_series_idx ON chapter(series_id);
 CREATE INDEX chapter_date_added_idx ON chapter(date_added);
 
+-- Cross-device metadata-fix history (PLAN.md §10) -- Fix Metadata's chosen (provider,
+-- externalId) keyed by the series' raw scanned title as it stood right before the fix, synced
+-- separately from reading_progress to help bridge devices that haven't matched (or scanned
+-- under a different raw title) that series themselves yet.
+CREATE TABLE metadata_alias (
+  normalized_old_title TEXT NOT NULL PRIMARY KEY,
+  provider             TEXT NOT NULL,
+  external_id          TEXT NOT NULL,
+  updated_at           INTEGER NOT NULL,
+  device_id            TEXT
+);
+
 -- Source root (the granted SAF tree, or an SMB share config) — remembered across
 -- restarts. `type` is included in the ON CONFLICT update so switching the single
 -- configured root from LOCAL to SMB (or back) actually takes effect, not just
@@ -248,3 +260,20 @@ SELECT s.metadata_provider, s.external_id, s.sort_title, c.volume, c.number,
 FROM reading_progress p
 JOIN chapter c ON c.id = p.chapter_id
 JOIN series s ON s.id = c.series_id;
+
+-- Fix Metadata's history (PLAN.md §10) -- upsert by title, always the newest local write (no
+-- "newer wins" guard needed here unlike reading progress: this is a fresh user action, never a
+-- merge target for a local write).
+upsertMetadataAlias:
+INSERT INTO metadata_alias(normalized_old_title, provider, external_id, updated_at, device_id)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(normalized_old_title) DO UPDATE SET
+  provider = excluded.provider,
+  external_id = excluded.external_id,
+  updated_at = excluded.updated_at,
+  device_id = excluded.device_id;
+
+-- Every Fix Metadata action this device has ever recorded (PLAN.md §10) -- the local half of
+-- an alias sync pass, pushed alongside whatever the merge with remote resolves to.
+selectAllMetadataAliases:
+SELECT normalized_old_title, provider, external_id, updated_at, device_id FROM metadata_alias;

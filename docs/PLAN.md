@@ -1483,6 +1483,39 @@ convergence check that marking a chapter read on one shows read on the other aft
   the job being silently rescheduled. Sign-in sync and the debounced per-change sync above are
   unaffected, since both only run while the app is already open.
 
+**Metadata-alias sync — a second Drive file feeding back into progress sync (2026-07-05).**
+Every manual Fix Metadata action now records a *metadata alias*: the series' raw scanned title
+exactly as it stood right before the fix, paired with the (provider, externalId) the user
+confirmed (`LibraryRepository.recordMetadataAlias`, `metadata_alias` table, v5→v6 migration in
+`5.sqm`). Deliberately scoped to **manual fixes only**, not the automatic background enrichment
+pipeline — high-confidence, low-volume, and it's what "fix the metadata" naturally means.
+
+This syncs as its own file (`metadata_aliases.json`, `MetadataAliasBackend`/
+`GoogleDriveSyncBackend`'s second responsibility) rather than folding into `progress.json`, and
+is consulted *inside* `ProgressSyncCoordinator.sync()` to improve progress matching itself:
+`ProgressRecord.bridgedWith(aliases)` fills in a still-unmatched record's (provider,
+externalId) from a known alias for its title before `resolveSyncGroups` runs, so a device that
+hasn't matched a series yet (or scanned it under a different raw title than another device)
+can still have its progress merge correctly with a device that *has* matched it — beyond what
+plain title-text equality (case 3) reaches alone. Bridging never touches a record's own title
+(the local-apply step still needs it to find *this* device's own chapters) and never overrides
+a genuine existing match — it only ever fills the previously-empty case-3 gap. Aliases merge
+with the same last-write-wins-by-`(updatedAt, deviceId)` rule as progress
+(`resolveAliasWinners`), keyed by title rather than progress's three-case matching, since an
+alias's key *is* its title.
+
+Deliberately **not** done: applying a learned alias to a local series' own metadata
+automatically. The alias only ever helps progress converge; a device still needs its own Fix
+Metadata run (or the background enrichment pipeline) to see the real title/cover/description
+for a series — a decision to keep the blast radius of this feature to sync only.
+
+Verified: full unit coverage in `core:sync` (`MetadataAliasMergeTest` — winner selection,
+tiebreak determinism, bridging fills/leaves-alone/no-ops correctly) and
+`ProgressSyncCoordinatorTest` (a worked example showing two records that share **no** grouping
+key without a known alias — different raw titles, one missing a provider — merge into one once
+the alias is known, and that aliases themselves merge/push with the same LWW semantics as
+progress).
+
 ---
 
 ## 16. Deferred extensions (designed-for, not built)

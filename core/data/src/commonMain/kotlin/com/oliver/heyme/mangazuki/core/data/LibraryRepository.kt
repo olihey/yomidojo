@@ -10,6 +10,7 @@ import com.oliver.heyme.mangazuki.core.domain.Series as DomainSeries
 import com.oliver.heyme.mangazuki.core.domain.ioDispatcher
 import com.oliver.heyme.mangazuki.core.domain.nowEpochMillis
 import com.oliver.heyme.mangazuki.core.domain.SyncProgressRow
+import com.oliver.heyme.mangazuki.core.domain.MetadataAliasRow
 import com.oliver.heyme.mangazuki.core.metadata.RemoteWorkDetails
 import com.oliver.heyme.mangazuki.core.data.db.Series as SeriesRow
 import kotlinx.coroutines.flow.Flow
@@ -176,6 +177,28 @@ class LibraryRepository(db: MangaDatabase) {
                 number = it.number,
                 completed = it.completed == 1L,
                 lastPageIndex = it.last_page_index.toInt(),
+                updatedAt = it.updated_at,
+                deviceId = it.device_id,
+            )
+        }
+    }
+
+    /** Records a manual Fix Metadata action's before/after (PLAN.md §10) for cross-device
+     * sync -- always the newest write for [normalizedOldTitle] (a fresh user action, not a
+     * merge target), unlike [applyProgressIfNewer]'s guard against a stale remote write. */
+    suspend fun recordMetadataAlias(normalizedOldTitle: String, provider: String, externalId: String, deviceId: String) =
+        withContext(ioDispatcher) {
+            q.upsertMetadataAlias(normalizedOldTitle, provider, externalId, nowEpochMillis(), deviceId)
+        }
+
+    /** Every Fix Metadata action this device has recorded (PLAN.md §10) — the local half of an
+     * alias sync pass. */
+    suspend fun allMetadataAliases(): List<MetadataAliasRow> = withContext(ioDispatcher) {
+        q.selectAllMetadataAliases().executeAsList().map {
+            MetadataAliasRow(
+                normalizedOldTitle = it.normalized_old_title,
+                provider = it.provider,
+                externalId = it.external_id,
                 updatedAt = it.updated_at,
                 deviceId = it.device_id,
             )

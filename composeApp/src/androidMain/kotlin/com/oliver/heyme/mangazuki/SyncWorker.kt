@@ -7,6 +7,7 @@ import com.oliver.heyme.mangazuki.core.data.DatabaseDriverFactory
 import com.oliver.heyme.mangazuki.core.data.LibraryRepository
 import com.oliver.heyme.mangazuki.core.data.createMangaDatabase
 import com.oliver.heyme.mangazuki.core.sync.GoogleDriveSyncBackend
+import com.oliver.heyme.mangazuki.core.sync.NoOpMetadataAliasBackend
 import com.russhwolf.settings.SharedPreferencesSettings
 
 /**
@@ -30,7 +31,16 @@ class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
         val repository = LibraryRepository(database)
 
         return try {
-            ProgressSyncCoordinator(repository, GoogleDriveSyncBackend(authManager), appPrefs::recordSyncCompleted).sync()
+            // One Drive backend instance covers both files (progress.json,
+            // metadata_aliases.json, PLAN.md §10) -- same auth/HTTP plumbing either way.
+            val driveBackend = GoogleDriveSyncBackend(authManager)
+            // Settings' "Sync fixed metadata" toggle -- off means never pull/push
+            // metadata_aliases.json, without the coordinator needing to know why.
+            val aliasBackend = if (appPrefs.metadataAliasSyncEnabled.value) driveBackend else NoOpMetadataAliasBackend
+            // Only record an alias "last synced" timestamp when the toggle is actually on -- otherwise
+            // the byline would claim a metadata_aliases.json sync that never happened (PLAN.md §10).
+            val onAliasSyncCompleted: () -> Unit = { if (appPrefs.metadataAliasSyncEnabled.value) appPrefs.recordMetadataAliasSyncCompleted() }
+            ProgressSyncCoordinator(repository, driveBackend, aliasBackend, appPrefs::recordSyncCompleted, onAliasSyncCompleted).sync()
             Result.success()
         } catch (t: Throwable) {
             android.util.Log.w("SyncWorker", "background sync failed", t)

@@ -89,6 +89,8 @@ fun SettingsScreen(
     val metadataProvider by appPreferences.metadataProvider.collectAsState()
     val syncEnabled by appPreferences.syncEnabled.collectAsState()
     val lastSyncedAt by appPreferences.lastSyncedAt.collectAsState()
+    val metadataAliasSyncEnabled by appPreferences.metadataAliasSyncEnabled.collectAsState()
+    val lastMetadataAliasSyncedAt by appPreferences.lastMetadataAliasSyncedAt.collectAsState()
     val backgroundSyncEnabled by appPreferences.backgroundSyncEnabled.collectAsState()
     val sync by syncState.collectAsState()
 
@@ -266,6 +268,13 @@ fun SettingsScreen(
                         checked = syncEnabled,
                         onCheckedChange = appPreferences::setSyncEnabled,
                         byline = lastSyncedAt?.let { "Last synced ${formatDateTime(it)}" } ?: "Not synced yet",
+                    )
+                    SettingSwitchRow(
+                        title = "Sync fixed metadata",
+                        subtitle = "Shares Fix Metadata matches across your devices to help reading progress line up correctly",
+                        checked = metadataAliasSyncEnabled,
+                        onCheckedChange = appPreferences::setMetadataAliasSyncEnabled,
+                        byline = lastMetadataAliasSyncedAt?.let { "Last synced ${formatDateTime(it)}" } ?: "Not synced yet",
                     )
                     SettingSwitchRow(
                         title = "Sync in background",

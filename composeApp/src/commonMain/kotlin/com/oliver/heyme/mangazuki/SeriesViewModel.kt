@@ -143,7 +143,11 @@ class SeriesViewModel(
     }
 
     /** Rebinds external_id and re-enriches from the chosen candidate (PLAN.md §9.1) —
-     * the same fields the background pipeline would have written, just user-confirmed. */
+     * the same fields the background pipeline would have written, just user-confirmed. Also
+     * records a metadata alias (PLAN.md §10) — this series' raw scanned title, exactly as it
+     * stood before this fix, paired with the provider/id just confirmed — so cross-device sync
+     * can bridge other devices that haven't matched (or scanned under a different raw title)
+     * this same series yet. */
     fun applyMetadataMatch(work: RemoteWork) {
         scope.launch {
             metadataSearchLoading.value = true
@@ -151,7 +155,12 @@ class SeriesViewModel(
                 val details = providers.get(metadataSearchProvider.value).details(work.externalId)
                 val coverPath = downloadCover(coverClient, coversDir, details.externalId, details.coverUrl)
                 val bannerPath = downloadBanner(coverClient, coversDir, details.externalId, details.bannerUrl)
+                val oldTitle = series.value?.sortTitle
                 repository.applyMetadata(seriesId, details, coverPath, bannerPath)
+                if (oldTitle != null) {
+                    repository.recordMetadataAlias(oldTitle, details.providerId, details.externalId, appPreferences.deviceId)
+                }
+                requestSync()
                 metadataSearchOpen.value = false
             } catch (t: Throwable) {
                 // Leave the dialog open with its current results — the user can retry.

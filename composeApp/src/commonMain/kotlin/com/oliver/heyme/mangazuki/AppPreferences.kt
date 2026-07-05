@@ -78,6 +78,35 @@ class AppPreferences(private val settings: Settings) {
         settings.putBoolean(KEY_SYNC_ENABLED, enabled)
     }
 
+    /** Whether Fix Metadata's alias history (PLAN.md §10) syncs at all -- independent of
+     * [syncEnabled], which pauses reading-progress sync entirely. Turning this off doesn't
+     * touch the locally-recorded aliases themselves (`recordMetadataAlias` always writes
+     * locally, same as reading progress always writes locally regardless of any toggle here);
+     * it only stops [ProgressSyncCoordinator.sync] from pulling/pushing `metadata_aliases.json`
+     * -- the caller swaps in `NoOpMetadataAliasBackend` when this is off, so the coordinator
+     * itself never needs to know about the toggle. */
+    private val _metadataAliasSyncEnabled = MutableStateFlow(settings.getBoolean(KEY_METADATA_ALIAS_SYNC_ENABLED, true))
+    val metadataAliasSyncEnabled: StateFlow<Boolean> = _metadataAliasSyncEnabled
+
+    fun setMetadataAliasSyncEnabled(enabled: Boolean) {
+        _metadataAliasSyncEnabled.value = enabled
+        settings.putBoolean(KEY_METADATA_ALIAS_SYNC_ENABLED, enabled)
+    }
+
+    /** When `metadata_aliases.json` last actually pulled/pushed -- separate from [lastSyncedAt]
+     * since [ProgressSyncCoordinator.sync] always runs both parts, but the caller only invokes
+     * this one when [metadataAliasSyncEnabled] is on (real backend, not `NoOpMetadataAliasBackend`)
+     * -- same call-site-decides pattern as the toggle itself. Null until the first alias sync ever
+     * completes, or if the toggle has never been on. */
+    private val _lastMetadataAliasSyncedAt = MutableStateFlow(settings.getLongOrNull(KEY_LAST_METADATA_ALIAS_SYNCED_AT))
+    val lastMetadataAliasSyncedAt: StateFlow<Long?> = _lastMetadataAliasSyncedAt
+
+    fun recordMetadataAliasSyncCompleted() {
+        val now = nowEpochMillis()
+        _lastMetadataAliasSyncedAt.value = now
+        settings.putLong(KEY_LAST_METADATA_ALIAS_SYNCED_AT, now)
+    }
+
     /** When a [ProgressSyncCoordinator.sync] last completed without throwing -- from either the
      * foreground sign-in trigger or the periodic `SyncWorker` -- for Settings' "last synced"
      * byline. Null until the first sync ever completes. */
@@ -114,5 +143,7 @@ class AppPreferences(private val settings: Settings) {
         const val KEY_SYNC_ENABLED = "app.syncEnabled"
         const val KEY_LAST_SYNCED_AT = "app.lastSyncedAt"
         const val KEY_BACKGROUND_SYNC_ENABLED = "app.backgroundSyncEnabled"
+        const val KEY_METADATA_ALIAS_SYNC_ENABLED = "app.metadataAliasSyncEnabled"
+        const val KEY_LAST_METADATA_ALIAS_SYNCED_AT = "app.lastMetadataAliasSyncedAt"
     }
 }

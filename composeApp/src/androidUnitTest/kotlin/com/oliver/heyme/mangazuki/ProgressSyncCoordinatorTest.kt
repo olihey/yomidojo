@@ -7,6 +7,8 @@ import com.oliver.heyme.mangazuki.core.data.db.MangaDatabase
 import com.oliver.heyme.mangazuki.core.domain.Chapter
 import com.oliver.heyme.mangazuki.core.domain.ChapterFormat
 import com.oliver.heyme.mangazuki.core.domain.Series
+import com.oliver.heyme.mangazuki.core.sync.MetadataAliasBackend
+import com.oliver.heyme.mangazuki.core.sync.MetadataAliasRecord
 import com.oliver.heyme.mangazuki.core.sync.ProgressKey
 import com.oliver.heyme.mangazuki.core.sync.ProgressRecord
 import com.oliver.heyme.mangazuki.core.sync.SyncBackend
@@ -35,6 +37,14 @@ class ProgressSyncCoordinatorTest {
         }
     }
 
+    private class FakeMetadataAliasBackend(private val remote: List<MetadataAliasRecord>) : MetadataAliasBackend {
+        var pushed: List<MetadataAliasRecord>? = null
+        override suspend fun pullAliases(): List<MetadataAliasRecord> = remote
+        override suspend fun pushAliases(aliases: List<MetadataAliasRecord>) {
+            pushed = aliases
+        }
+    }
+
     private fun newRepo(): LibraryRepository {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         MangaDatabase.Schema.create(driver)
@@ -44,6 +54,10 @@ class ProgressSyncCoordinatorTest {
     private fun matchedSeries(id: String, title: String, provider: String, externalId: String) = Series(
         id = id, title = title, sortTitle = title.lowercase(), dateAdded = 1, lastScanned = 1,
         metadataProvider = provider, externalId = externalId,
+    )
+
+    private fun unmatchedSeries(id: String, title: String) = Series(
+        id = id, title = title, sortTitle = title.lowercase(), dateAdded = 1, lastScanned = 1,
     )
 
     private fun chapter(id: String, seriesId: String, number: Double) = Chapter(
@@ -107,5 +121,64 @@ class ProgressSyncCoordinatorTest {
 
         assertNull(repo.resolveLocalChapterId("ANILIST", "16498", "attack on titan", null, 1.0))
         assertEquals(listOf(remote), backend.pushed, "an unresolvable remote record must still round-trip through push()")
+    }
+
+    @Test
+    fun a_known_alias_bridges_a_locally_unmatched_record_with_a_differently_titled_remote_record() = runTest {
+        // Local scanned this series under "Vagabond" and never matched its metadata; remote
+        // scanned the exact same real series under a different raw title ("Vagabond (2019)")
+        // but DID match it. Without a known alias, these two records share no grouping key at
+        // all (different title text, one side missing a provider) and would never merge --
+        // exactly the gap PLAN.md §10's metadata-alias history closes.
+        val repo = newRepo()
+        repo.persistSeries(unmatchedSeries("s1", "Vagabond"), listOf(chapter("c1", "s1", 1.0)))
+        repo.markProgress("c1", lastPageIndex = 0, completed = false, deviceId = "this-device")
+
+        val remote = ProgressRecord(
+            key = ProgressKey("ANILIST", "999", "vagabond (2019)", null, 1.0),
+            completed = true, lastPageIndex = 5, updatedAt = 99_999_999_999_999L, deviceId = "other-device",
+        )
+        val knownAlias = MetadataAliasRecord(
+            normalizedTitle = "vagabond", provider = "ANILIST", externalId = "999",
+            updatedAt = 1, deviceId = "a-third-device",
+        )
+        val backend = FakeSyncBackend(listOf(remote))
+        ProgressSyncCoordinator(repo, backend, FakeMetadataAliasBackend(listOf(knownAlias))).sync()
+
+        assertEquals(1, backend.pushed?.size, "the alias should bridge local and remote into a single merged group")
+        assertEquals(true, backend.pushed?.single()?.completed, "remote's newer record should win the merge")
+    }
+
+    @Test
+    fun aliases_merge_and_push_the_same_last_write_wins_way_as_progress() = runTest {
+        val repo = newRepo()
+        repo.persistSeries(unmatchedSeries("s1", "Vagabond"), emptyList())
+        repo.recordMetadataAlias("vagabond", "ANILIST", "999", deviceId = "this-device")
+        val localWrite = repo.allMetadataAliases().single()
+
+        val staleRemoteAlias = MetadataAliasRecord(
+            normalizedTitle = "vagabond", provider = "KITSU", externalId = "1",
+            updatedAt = localWrite.updatedAt - 1000, deviceId = "other-device",
+        )
+        val aliasBackend = FakeMetadataAliasBackend(listOf(staleRemoteAlias))
+        ProgressSyncCoordinator(repo, FakeSyncBackend(emptyList()), aliasBackend).sync()
+
+        assertEquals(1, aliasBackend.pushed?.size, "one winner per title, not both conflicting entries")
+        assertEquals("ANILIST", aliasBackend.pushed?.single()?.provider, "the newer local fix must survive a stale remote alias")
+    }
+
+    @Test
+    fun onAliasSyncCompleted_fires_independently_of_onSyncCompleted() = runTest {
+        val repo = newRepo()
+        var progressCompletedCount = 0
+        var aliasCompletedCount = 0
+        ProgressSyncCoordinator(
+            repo, FakeSyncBackend(emptyList()), FakeMetadataAliasBackend(emptyList()),
+            onSyncCompleted = { progressCompletedCount++ },
+            onAliasSyncCompleted = { aliasCompletedCount++ },
+        ).sync()
+
+        assertEquals(1, progressCompletedCount, "onSyncCompleted should fire once per sync() call")
+        assertEquals(1, aliasCompletedCount, "onAliasSyncCompleted should fire once per sync() call, independent of onSyncCompleted")
     }
 }

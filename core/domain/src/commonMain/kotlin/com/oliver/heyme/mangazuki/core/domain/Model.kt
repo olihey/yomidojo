@@ -91,3 +91,17 @@ data class SyncProgressRow(
     val updatedAt: Long,
     val deviceId: String?,
 )
+
+/** One manual Fix Metadata action's before/after (PLAN.md §10) -- the series' raw scanned
+ * title exactly as it stood right before the fix, paired with the (provider, externalId) the
+ * user confirmed. Synced separately from reading progress (a different Drive file) to help
+ * bridge devices that haven't matched -- or scanned under a different raw title -- that series
+ * themselves yet. Plain-primitive-typed for the same `core:data`/`core:sync` layering reason
+ * as [SyncProgressRow]. */
+data class MetadataAliasRow(
+    val normalizedOldTitle: String,
+    val provider: String,
+    val externalId: String,
+    val updatedAt: Long,
+    val deviceId: String?,
+)

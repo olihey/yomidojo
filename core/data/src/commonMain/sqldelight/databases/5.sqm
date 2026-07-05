@@ -1,0 +1,11 @@
+-- v5 -> v6: cross-device metadata-fix history (PLAN.md §10) -- Fix Metadata's chosen
+-- (provider, externalId) keyed by the series' raw scanned title as it stood right before the
+-- fix, synced separately from reading progress to help bridge devices that haven't matched (or
+-- scanned under a different raw title) that series themselves yet.
+CREATE TABLE metadata_alias (
+  normalized_old_title TEXT NOT NULL PRIMARY KEY,
+  provider             TEXT NOT NULL,
+  external_id          TEXT NOT NULL,
+  updated_at           INTEGER NOT NULL,
+  device_id            TEXT
+);

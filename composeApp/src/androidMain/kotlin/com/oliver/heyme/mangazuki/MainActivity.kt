@@ -17,6 +17,7 @@ import com.oliver.heyme.mangazuki.core.metadata.KitsuMetadataProvider
 import com.oliver.heyme.mangazuki.core.scanner.LibraryScanner
 import com.oliver.heyme.mangazuki.core.sync.GoogleAuthManager
 import com.oliver.heyme.mangazuki.core.sync.GoogleDriveSyncBackend
+import com.oliver.heyme.mangazuki.core.sync.NoOpMetadataAliasBackend
 import com.russhwolf.settings.SharedPreferencesSettings
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
@@ -222,6 +223,17 @@ class MainActivity : ComponentActivity() {
      * rather than a freshly built throwaway graph. */
     private suspend fun runSyncIfEnabled(appPrefs: AppPreferences, authManager: GoogleAuthManager, repository: LibraryRepository) {
         if (!appPrefs.syncEnabled.value || !authManager.isSignedIn()) return
-        runCatching { ProgressSyncCoordinator(repository, GoogleDriveSyncBackend(authManager), appPrefs::recordSyncCompleted).sync() }
+        // One Drive backend instance covers both files (progress.json, metadata_aliases.json,
+        // PLAN.md §10) -- same auth/HTTP plumbing either way.
+        val driveBackend = GoogleDriveSyncBackend(authManager)
+        // Settings' "Sync fixed metadata" toggle (PLAN.md §10) -- off means never pull/push
+        // metadata_aliases.json, without the coordinator needing to know why.
+        val aliasBackend = if (appPrefs.metadataAliasSyncEnabled.value) driveBackend else NoOpMetadataAliasBackend
+        // Only record an alias "last synced" timestamp when the toggle is actually on -- otherwise
+        // the byline would claim a metadata_aliases.json sync that never happened (PLAN.md §10).
+        val onAliasSyncCompleted: () -> Unit = { if (appPrefs.metadataAliasSyncEnabled.value) appPrefs.recordMetadataAliasSyncCompleted() }
+        runCatching {
+            ProgressSyncCoordinator(repository, driveBackend, aliasBackend, appPrefs::recordSyncCompleted, onAliasSyncCompleted).sync()
+        }
     }
 }
