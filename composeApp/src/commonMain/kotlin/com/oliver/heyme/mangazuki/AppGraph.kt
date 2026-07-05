@@ -31,4 +31,18 @@ class AppGraph(
      * since a merely-persisted flag wouldn't stop the OS from waking the process up on schedule.
      * A callback for the same Android-only reason [syncState]'s sign-in actions are. */
     val onBackgroundSyncEnabledChanged: (Boolean) -> Unit = {},
+    /** Settings' Debug section (PLAN.md §10) -- view/clear actions on the raw
+     * `progress.json`/`metadata_aliases.json` files on Drive, since `appDataFolder` can't be
+     * browsed any other way. Fetches return null if signed out. Callbacks for the same
+     * Android-only reason [syncState]'s sign-in actions are. */
+    val fetchProgressJson: suspend () -> String? = { null },
+    val fetchMetadataAliasesJson: suspend () -> String? = { null },
+    val clearProgressJson: suspend () -> Unit = {},
+    val clearMetadataAliasesJson: suspend () -> Unit = {},
+    /** Whether this is a debug build (`BuildConfig.DEBUG`) -- Settings' Debug section (PLAN.md
+     * §10) is dev-only, since "clear the Drive file" isn't something a released app should
+     * expose. A plain value rather than a callback since it never changes at runtime, but still
+     * supplied by `MainActivity` for the same reason [syncState]'s Android-only bits are: nothing
+     * in commonMain has its own notion of build type. */
+    val isDebugBuild: Boolean = false,
 )

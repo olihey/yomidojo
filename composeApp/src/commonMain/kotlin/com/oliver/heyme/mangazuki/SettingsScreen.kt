@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -25,13 +27,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.oliver.heyme.mangazuki.core.domain.ReadingMode
 import com.oliver.heyme.mangazuki.core.domain.formatDateTime
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 
 fun ThemeMode.label(): String = when (this) {
     ThemeMode.LIGHT -> "Light"
@@ -79,11 +84,19 @@ fun SettingsScreen(
     onSignIn: () -> Unit = {},
     onSignOut: () -> Unit = {},
     onBackgroundSyncEnabledChanged: (Boolean) -> Unit = {},
+    fetchProgressJson: suspend () -> String? = { null },
+    fetchMetadataAliasesJson: suspend () -> String? = { null },
+    clearProgressJson: suspend () -> Unit = {},
+    clearMetadataAliasesJson: suspend () -> Unit = {},
+    isDebugBuild: Boolean = false,
 ) {
     var readingMode by remember { mutableStateOf(prefs.defaultReadingMode) }
     var invertTapZones by remember { mutableStateOf(prefs.invertTapZones) }
     var volumeKeyPaging by remember { mutableStateOf(prefs.volumeKeyPaging) }
     var showResetConfirm by remember { mutableStateOf(false) }
+    var viewJsonDialog by remember { mutableStateOf<ViewJsonDialogState?>(null) }
+    var clearTarget by remember { mutableStateOf<DebugFile?>(null) }
+    val coroutineScope = rememberCoroutineScope()
     val themeMode by appPreferences.themeMode.collectAsState()
     val titleLanguage by appPreferences.titleLanguage.collectAsState()
     val metadataProvider by appPreferences.metadataProvider.collectAsState()
@@ -104,7 +117,7 @@ fun SettingsScreen(
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxWidth()) {
+        Column(Modifier.padding(padding).fillMaxWidth().verticalScroll(rememberScrollState())) {
             Text(
                 "Theme",
                 style = MaterialTheme.typography.titleSmall,
@@ -297,6 +310,50 @@ fun SettingsScreen(
                 }
             }
 
+            if (isDebugBuild && sync is SyncState.SignedIn) {
+                HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+                Text(
+                    "Debug",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp),
+                )
+                Text(
+                    "Inspect or clear the raw files this device syncs through Google Drive.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+                TextButton(
+                    onClick = {
+                        viewJsonDialog = ViewJsonDialogState.Loading(DebugFile.PROGRESS)
+                        coroutineScope.launch {
+                            viewJsonDialog = ViewJsonDialogState.Loaded(DebugFile.PROGRESS, fetchProgressJson())
+                        }
+                    },
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) { Text("View progress.json") }
+                TextButton(
+                    onClick = {
+                        viewJsonDialog = ViewJsonDialogState.Loading(DebugFile.METADATA_ALIASES)
+                        coroutineScope.launch {
+                            viewJsonDialog = ViewJsonDialogState.Loaded(DebugFile.METADATA_ALIASES, fetchMetadataAliasesJson())
+                        }
+                    },
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) { Text("View metadata_aliases.json") }
+                TextButton(
+                    onClick = { clearTarget = DebugFile.PROGRESS },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) { Text("Clear progress.json") }
+                TextButton(
+                    onClick = { clearTarget = DebugFile.METADATA_ALIASES },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                ) { Text("Clear metadata_aliases.json") }
+            }
+
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
 
             Text(
@@ -346,6 +403,81 @@ fun SettingsScreen(
             },
         )
     }
+
+    viewJsonDialog?.let { state ->
+        AlertDialog(
+            onDismissRequest = { viewJsonDialog = null },
+            title = { Text(state.file.fileName) },
+            text = {
+                when (state) {
+                    is ViewJsonDialogState.Loading -> {
+                        Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            CircularProgressIndicator(Modifier.size(20.dp))
+                            Text("Fetching from Drive…")
+                        }
+                    }
+                    is ViewJsonDialogState.Loaded -> {
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
+                            Text(
+                                state.json ?: "(not signed in, or no file yet)",
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewJsonDialog = null }) { Text("Close") }
+            },
+        )
+    }
+
+    clearTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { clearTarget = null },
+            title = { Text("Clear ${target.fileName}?") },
+            text = {
+                Text(
+                    "Overwrites the Drive copy with an empty file. This device's own local data " +
+                        "isn't touched and will re-upload on the next sync, but other devices lose " +
+                        "their contribution to this file until they next sync too.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        clearTarget = null
+                        coroutineScope.launch {
+                            when (target) {
+                                DebugFile.PROGRESS -> clearProgressJson()
+                                DebugFile.METADATA_ALIASES -> clearMetadataAliasesJson()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Clear") }
+            },
+            dismissButton = {
+                TextButton(onClick = { clearTarget = null }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+/** Settings' Debug section (PLAN.md §10) -- which of the two `appDataFolder` files a view/clear
+ * action targets. */
+private enum class DebugFile(val fileName: String) {
+    PROGRESS("progress.json"),
+    METADATA_ALIASES("metadata_aliases.json"),
+}
+
+/** A fetch takes a network round trip, so this needs a loading state distinct from "loaded but
+ * null" (not signed in, or the file doesn't exist on Drive yet -- both normal). */
+private sealed interface ViewJsonDialogState {
+    val file: DebugFile
+    data class Loading(override val file: DebugFile) : ViewJsonDialogState
+    data class Loaded(override val file: DebugFile, val json: String?) : ViewJsonDialogState
 }
 
 @Composable

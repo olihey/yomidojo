@@ -1516,6 +1516,15 @@ key without a known alias — different raw titles, one missing a provider — m
 the alias is known, and that aliases themselves merge/push with the same LWW semantics as
 progress).
 
+**Debug section in Settings (2026-07-05, dev-build only).** Since `appDataFolder` can't be
+browsed through Drive's own UI, Settings gains a "Debug" section (`GoogleDriveSyncBackend`'s
+`fetchRawProgressJson`/`fetchRawMetadataAliasesJson`/`clearProgress`/`clearMetadataAliases`) with
+four actions: view either file's raw pretty-printed content, or clear it (overwrite with an
+empty file via the existing full-snapshot `push`/`pushAliases` — not a Drive delete call — so the
+next sync from any device just re-populates it from local data). Gated on `AppGraph.isDebugBuild`
+(`MainActivity` supplies `BuildConfig.DEBUG`) *and* being signed in, so it never reaches a release
+build.
+
 ---
 
 ## 16. Deferred extensions (designed-for, not built)

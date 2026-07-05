@@ -10,6 +10,7 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.patch
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
@@ -17,12 +18,14 @@ import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 
 private const val DRIVE_FILES_ENDPOINT = "https://www.googleapis.com/drive/v3/files"
 private const val DRIVE_UPLOAD_ENDPOINT = "https://www.googleapis.com/upload/drive/v3/files"
 private const val PROGRESS_FILE_NAME = "progress.json"
 private const val METADATA_ALIAS_FILE_NAME = "metadata_aliases.json"
 private const val WIRE_FORMAT_VERSION = 1
+private val debugJsonPrinter = Json { prettyPrint = true }
 
 /**
  * Google Drive `appDataFolder` transport (PLAN.md §10) -- one JSON blob per synced entity, not
@@ -72,6 +75,43 @@ class GoogleDriveSyncBackend(
     override suspend fun pushAliases(aliases: List<MetadataAliasRecord>) {
         val token = auth.accessToken() ?: error("Google Drive sync: not signed in")
         upsertFile(token, METADATA_ALIAS_FILE_NAME, AliasFileDto(WIRE_FORMAT_VERSION, aliases.map { it.toDto() }))
+    }
+
+    /** Settings' Debug section (PLAN.md §10) -- fetches a file's raw content as-is from Drive,
+     * since `appDataFolder` can't be browsed any other way. Reuses [findFileId]/[getFile] rather
+     * than [pull]/[pullAliases] so this shows exactly what's on Drive, not the
+     * already-deserialized-and-reconstructed [ProgressRecord]/[MetadataAliasRecord] shapes. */
+    suspend fun fetchRawProgressJson(): String? {
+        val token = auth.accessToken() ?: return null
+        return fetchRawFile(token, PROGRESS_FILE_NAME)
+    }
+
+    suspend fun fetchRawMetadataAliasesJson(): String? {
+        val token = auth.accessToken() ?: return null
+        return fetchRawFile(token, METADATA_ALIAS_FILE_NAME)
+    }
+
+    /** Settings' Debug section "Clear" actions (PLAN.md §10) -- overwrites the Drive copy with
+     * an empty file via the existing full-snapshot [push]/[pushAliases], rather than deleting it
+     * outright, so there's no separate delete-vs-recreate path to reason about; the next sync
+     * from any device just re-populates it from whatever that device still has locally. */
+    suspend fun clearProgress() {
+        push(emptyList())
+    }
+
+    suspend fun clearMetadataAliases() {
+        pushAliases(emptyList())
+    }
+
+    private suspend fun fetchRawFile(token: String, fileName: String): String? {
+        val fileId = findFileId(token, fileName) ?: return null
+        val response = getFile(token, fileId)
+        if (!response.status.isSuccess()) return null
+        val raw = response.bodyAsText()
+        // Best-effort pretty-print for readability in the debug dialog -- falls back to the raw
+        // (already valid, just unindented) text if this ever doesn't parse for some reason.
+        return runCatching { debugJsonPrinter.encodeToString(JsonElement.serializer(), Json.parseToJsonElement(raw)) }
+            .getOrDefault(raw)
     }
 
     private suspend fun findFileId(token: String, fileName: String): String? {

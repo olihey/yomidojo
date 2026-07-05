@@ -44,6 +44,11 @@ fun App(graph: AppGraph, onPickFolder: () -> Unit, onSignIn: () -> Unit = {}, on
                     onSignIn = onSignIn,
                     onSignOut = onSignOut,
                     onBackgroundSyncEnabledChanged = graph.onBackgroundSyncEnabledChanged,
+                    fetchProgressJson = graph.fetchProgressJson,
+                    fetchMetadataAliasesJson = graph.fetchMetadataAliasesJson,
+                    clearProgressJson = graph.clearProgressJson,
+                    clearMetadataAliasesJson = graph.clearMetadataAliasesJson,
+                    isDebugBuild = graph.isDebugBuild,
                 )
             }
             composable("series/{seriesId}") { entry ->

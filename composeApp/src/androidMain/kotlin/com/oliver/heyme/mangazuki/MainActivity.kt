@@ -115,6 +115,19 @@ class MainActivity : ComponentActivity() {
                 appPrefs.setBackgroundSyncEnabled(enabled)
                 if (enabled) scheduleBackgroundSync() else cancelBackgroundSync()
             },
+            fetchProgressJson = {
+                if (authManager.isSignedIn()) GoogleDriveSyncBackend(authManager).fetchRawProgressJson() else null
+            },
+            fetchMetadataAliasesJson = {
+                if (authManager.isSignedIn()) GoogleDriveSyncBackend(authManager).fetchRawMetadataAliasesJson() else null
+            },
+            clearProgressJson = {
+                if (authManager.isSignedIn()) GoogleDriveSyncBackend(authManager).clearProgress()
+            },
+            clearMetadataAliasesJson = {
+                if (authManager.isSignedIn()) GoogleDriveSyncBackend(authManager).clearMetadataAliases()
+            },
+            isDebugBuild = BuildConfig.DEBUG,
         )
 
         pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
