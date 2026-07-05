@@ -44,6 +44,11 @@ class MainActivity : ComponentActivity() {
     private lateinit var pickFolder: ActivityResultLauncher<Uri?>
     private lateinit var readerPrefs: ReaderPreferences
     private lateinit var signIn: ActivityResultLauncher<Intent>
+    // Instance properties (not just onCreate locals) so onStart() can reach them for the
+    // foreground sync trigger below.
+    private lateinit var appPrefs: AppPreferences
+    private lateinit var authManager: GoogleAuthManager
+    private lateinit var repository: LibraryRepository
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,7 +59,7 @@ class MainActivity : ComponentActivity() {
         val smbSourceFactory = AndroidSmbSourceFactory(applicationContext)
 
         val database = createMangaDatabase(DatabaseDriverFactory(applicationContext).create())
-        val repository = LibraryRepository(database)
+        repository = LibraryRepository(database)
         val coversDir = applicationContext.filesDir.resolve("covers").absolutePath
 
         // Built eagerly (not inside setSafe's lazy factory) so MainActivity can keep a direct
@@ -83,7 +88,7 @@ class MainActivity : ComponentActivity() {
         val prefs = LibraryPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
-        val appPrefs = AppPreferences(
+        appPrefs = AppPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
         val metadataProviders = MetadataProviders(AniListMetadataProvider(), KitsuMetadataProvider())
@@ -94,7 +99,7 @@ class MainActivity : ComponentActivity() {
         // (commonMain) only ever sees the resulting StateFlow, never the manager itself, the
         // same reasoning as the SAF-specific pickFolder launcher below. Built before
         // LibraryViewModel so its requestSync callback can be threaded into the constructor.
-        val authManager = createGoogleAuthManager(applicationContext)
+        authManager = createGoogleAuthManager(applicationContext)
         val syncState = MutableStateFlow<SyncState>(if (authManager.isSignedIn()) SyncState.SignedIn else SyncState.SignedOut)
         val syncScheduler = ProgressSyncScheduler(activityScope) { runSyncIfEnabled(appPrefs, authManager, repository) }
 
@@ -184,6 +189,16 @@ class MainActivity : ComponentActivity() {
                 onSignOut = { authManager.signOut(); appPrefs.setSyncEnabled(false); syncState.value = SyncState.SignedOut },
             )
         }
+    }
+
+    /** Sync the moment the app comes back to the foreground (PLAN.md §10) -- otherwise a device
+     * that pushed new progress while this one was backgrounded wouldn't show it here until this
+     * device's own next write, sign-in, or the periodic 6h worker happened to run. Also fires
+     * once on a cold launch (onStart always follows onCreate) -- harmless, and arguably wanted
+     * anyway: opening the app fresh should show whatever's newest, not wait for a write first. */
+    override fun onStart() {
+        super.onStart()
+        activityScope.launch { runSyncIfEnabled(appPrefs, authManager, repository) }
     }
 
     /** Volume-key paging while the reader is open (PLAN.md §8.1); consumed events skip the

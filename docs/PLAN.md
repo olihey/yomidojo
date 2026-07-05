@@ -1575,6 +1575,17 @@ that sync's push, most likely the alias half throwing after the progress half al
 Now logs via `Log.w("MainActivity", "foreground sync failed", t)`, matching `SyncWorker`, so a
 future recurrence is diagnosable instead of silently indistinguishable from "sync never ran."
 
+**Sync on foreground (2026-07-05).** Until now, sync only ran on sign-in, a progress-mutating
+write (reader page turn, mark-as-read, Fix Metadata, a scan), or the periodic 6h worker —
+nothing synced purely from *opening/returning to* the app. A device that pushed new progress
+while this one sat backgrounded wouldn't show it here until this device's own next write.
+`MainActivity.onStart()` (new override) now calls the same `runSyncIfEnabled` guard every time
+the app becomes visible — including a cold launch, since `onStart` always follows `onCreate`
+(harmless, and arguably wanted: opening the app fresh should show whatever's newest rather than
+waiting for a write first). `appPrefs`/`authManager`/`repository` moved from `onCreate` locals to
+instance properties so `onStart()` can reach them. Verified live: backgrounding and reopening the
+app (no scan, no mark-as-read, no sign-in) advanced "Last synced" on its own.
+
 ---
 
 ## 16. Deferred extensions (designed-for, not built)
