@@ -3,12 +3,14 @@ package com.oliver.heyme.mangazuki
 import com.oliver.heyme.mangazuki.core.data.LibraryRepository
 import com.oliver.heyme.mangazuki.core.domain.MetadataAliasRow
 import com.oliver.heyme.mangazuki.core.domain.SyncProgressRow
+import com.oliver.heyme.mangazuki.core.sync.InProgressVolume
 import com.oliver.heyme.mangazuki.core.sync.MetadataAliasBackend
 import com.oliver.heyme.mangazuki.core.sync.MetadataAliasRecord
 import com.oliver.heyme.mangazuki.core.sync.NoOpMetadataAliasBackend
-import com.oliver.heyme.mangazuki.core.sync.ProgressKey
-import com.oliver.heyme.mangazuki.core.sync.ProgressRecord
+import com.oliver.heyme.mangazuki.core.sync.SeriesKey
+import com.oliver.heyme.mangazuki.core.sync.SeriesProgressRecord
 import com.oliver.heyme.mangazuki.core.sync.SyncBackend
+import com.oliver.heyme.mangazuki.core.sync.VolumeChapterKey
 import com.oliver.heyme.mangazuki.core.sync.bridgedWith
 import com.oliver.heyme.mangazuki.core.sync.resolveAliasWinners
 import com.oliver.heyme.mangazuki.core.sync.resolveSyncGroups
@@ -19,8 +21,9 @@ import kotlinx.coroutines.sync.withLock
  * Bridges `core:data` and `core:sync` (PLAN.md §10) — deliberately lives here rather than in
  * either module, since neither should depend on the other (a `LibraryRepository` that spoke
  * `core:sync` types would add a module edge this codebase's layering doesn't otherwise have).
- * [SyncProgressRow] <-> [ProgressRecord] conversion happens at this boundary, the same way
- * `AniListMetadataProvider` converts its own DTOs to/from `RemoteWork` at its boundary.
+ * [SyncProgressRow] (one per chapter, straight from SQL) is aggregated into one
+ * [SeriesProgressRecord] per series at this boundary, the same way `AniListMetadataProvider`
+ * converts its own DTOs to/from `RemoteWork` at its boundary.
  */
 class ProgressSyncCoordinator(
     private val repository: LibraryRepository,
@@ -47,7 +50,7 @@ class ProgressSyncCoordinator(
         val remoteAliases = aliasBackend.pullAliases()
         val aliasWinners = resolveAliasWinners(localAliases + remoteAliases)
 
-        val local = repository.allProgressForSync().map { it.toProgressRecord() }
+        val local = repository.allProgressForSync().toSeriesProgressRecords()
         val remote = backend.pull(null)
         // Bridging (PLAN.md §10) fills in a still-unmatched record's (provider, externalId)
         // from a known alias before grouping, so it can hard-match another device's already-
@@ -58,14 +61,28 @@ class ProgressSyncCoordinator(
         val winners = resolveSyncGroups(bridged).map { winner(it) }
 
         winners.forEach { record ->
-            // A winner for a chapter this device hasn't scanned yet (the file lives only on
-            // another device) is simply skipped here -- it still round-trips through push()
-            // below untouched, so a later device with that file can still apply it.
-            val chapterId = repository.resolveLocalChapterId(
-                record.key.provider, record.key.externalId, record.key.normalizedTitle,
-                record.key.volume, record.key.number,
-            ) ?: return@forEach
-            repository.applyProgressIfNewer(chapterId, record.lastPageIndex, record.completed, record.updatedAt, record.deviceId)
+            // A chapter this device hasn't scanned yet (the file lives only on another device)
+            // is simply skipped here -- it still round-trips through push() below untouched, so
+            // a later device with that file can still apply it.
+            record.completedVolumes.forEach { volume ->
+                val chapterId = repository.resolveLocalChapterId(
+                    record.key.provider, record.key.externalId, record.key.normalizedTitle,
+                    volume.volume, volume.number,
+                ) ?: return@forEach
+                // This device doesn't necessarily know the chapter's real page count at merge
+                // time (it may not have opened it yet) -- Int.MAX_VALUE is a safe "fully read"
+                // sentinel, since every reader/UI read of lastPageIndex already clamps to the
+                // chapter's own actual page count (ReaderScreen's pager, SeriesScreen's percent
+                // ring) rather than trusting it as an absolute index.
+                repository.applyProgressIfNewer(chapterId, Int.MAX_VALUE, true, record.updatedAt, "")
+            }
+            record.inProgressVolumes.forEach { volume ->
+                val chapterId = repository.resolveLocalChapterId(
+                    record.key.provider, record.key.externalId, record.key.normalizedTitle,
+                    volume.volume, volume.number,
+                ) ?: return@forEach
+                repository.applyProgressIfNewer(chapterId, volume.lastPageIndex, false, record.updatedAt, "")
+            }
         }
 
         backend.push(winners)
@@ -75,16 +92,22 @@ class ProgressSyncCoordinator(
     }
 }
 
-private fun SyncProgressRow.toProgressRecord() = ProgressRecord(
-    key = ProgressKey(provider, externalId, normalizedTitle, volume, number),
-    completed = completed,
-    lastPageIndex = lastPageIndex,
-    // A `reading_progress` row written before this feature existed has a null device_id
-    // (the old hardcoded-null writes) -- "" always loses the merge tiebreak against any real
-    // device id, a harmless, deterministic default rather than a crash.
-    deviceId = deviceId ?: "",
-    updatedAt = updatedAt,
-)
+/** Groups this device's per-chapter progress rows into one [SeriesProgressRecord] per series
+ * (PLAN.md §10) -- the local equivalent of what [SeriesRecordDto] represents on the wire.
+ * `updatedAt` is the max across the series' chapters: the single timestamp [winner] treats the
+ * whole record's [SeriesProgressRecord.inProgressVolumes] list as having been written at. */
+private fun List<SyncProgressRow>.toSeriesProgressRecords(): List<SeriesProgressRecord> =
+    groupBy { Triple(it.provider, it.externalId, it.normalizedTitle) }
+        .map { (key, rows) ->
+            val (provider, externalId, normalizedTitle) = key
+            SeriesProgressRecord(
+                key = SeriesKey(provider, externalId, normalizedTitle),
+                completedVolumes = rows.filter { it.completed }.map { VolumeChapterKey(it.volume, it.number) },
+                inProgressVolumes = rows.filterNot { it.completed }
+                    .map { InProgressVolume(it.volume, it.number, it.lastPageIndex) },
+                updatedAt = rows.maxOf { it.updatedAt },
+            )
+        }
 
 private fun MetadataAliasRow.toAliasRecord() = MetadataAliasRecord(
     normalizedTitle = normalizedOldTitle,

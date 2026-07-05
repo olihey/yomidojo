@@ -1525,6 +1525,38 @@ next sync from any device just re-populates it from local data). Gated on `AppGr
 (`MainActivity` supplies `BuildConfig.DEBUG`) *and* being signed in, so it never reaches a release
 build.
 
+**`progress.json` v2 — one record per series, not per chapter (2026-07-05).** v1 wrote one
+`SyncRecordDto` object per chapter (`provider`/`externalId`/`normalizedTitle`/`volume`/`number`/
+`completed`/`lastPageIndex`/`updatedAt`/`deviceId` each), which scales linearly with chapter
+count. v2 (`SeriesProgressRecord`/`SeriesKey`/`VolumeChapterKey`/`InProgressVolume`,
+`core:sync`) writes one record per **series**: `completedVolumes: [[volume, number], ...]` and
+`inProgressVolumes: [[volume, number, lastPageIndex], ...]`, both plain `List<List<Double?>>` (no
+custom serializer — `lastPageIndex` round-trips as a `Double` like the other two slots, e.g.
+`172.0` not `172`, since JSON doesn't distinguish anyway). `volume`/`number` mirror
+`Chapter.volume`/`Chapter.number`'s independent nullability — confirmed against this library's
+real data that both dimensions are actually used (e.g. "A Silent Voice"'s `v02` parses as
+`volume=2.0, number=null`, while other series in the same library key off `number` instead).
+No per-record `deviceId` anymore (dropped along with the per-chapter granularity it used to
+tiebreak).
+
+Merge semantics changed to fit the coarser grain (`SyncMerge.winner`):
+- `completedVolumes` is **unioned** across every record in a match group — completion is
+  monotonic (a device never un-reads a chapter behind sync's back), so a union is always safe
+  and needs no timestamp to arbitrate.
+- `inProgressVolumes` is taken **wholesale** from whichever record has the newer
+  `updatedAt` (last-write-wins for the whole list at once, not per entry), then filtered to drop
+  any entry the merged `completedVolumes` now covers — a stale in-progress marker must never
+  resurrect a chapter another device has since finished. An exact `updatedAt` tie keeps whichever
+  record is encountered first (deterministic given a fixed input order, but no longer meaningful
+  beyond that, now that there's no `deviceId` to break it explicitly).
+- `resolveSyncGroups`'s three-case provider/title matching (§10 above) is otherwise unchanged,
+  just operating on one record per series instead of one per chapter.
+
+**Breaking, no migration**: a v1 remote file deserializes as "no series yet" (`series` defaults
+to empty, `records` is silently ignored) — nothing local is lost (the real per-chapter state
+still lives in `reading_progress`), but the already-merged cross-device snapshot resets; each
+device's next sync simply re-populates it from its own local progress in the new shape.
+
 ---
 
 ## 16. Deferred extensions (designed-for, not built)

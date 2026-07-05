@@ -13,16 +13,16 @@ fun resolveAliasWinners(records: List<MetadataAliasRecord>): List<MetadataAliasR
 
 /**
  * Fills in a still-unmatched record's (provider, externalId) from a known alias for its
- * [ProgressKey.normalizedTitle] (PLAN.md §10) -- so [resolveSyncGroups]'s hard-match pass can
+ * [SeriesKey.normalizedTitle] (PLAN.md §10) -- so [resolveSyncGroups]'s hard-match pass can
  * group it with another device's already-matched records for the same real series, even when
  * this device hasn't matched that series (or scanned it under the exact same raw title) itself.
- * Leaves [ProgressKey.normalizedTitle] untouched: [ProgressRecord]s are always applied at the
- * end against a device's OWN local chapters via `resolveLocalChapterId`, whose title fallback
- * still needs the record's real (unbridged) title to find anything there. Already-matched
- * records (real provider present) pass through unchanged -- bridging only ever helps the
- * fallback path, never overrides a genuine match.
+ * Leaves [SeriesKey.normalizedTitle] untouched: [SeriesProgressRecord]s are always applied at
+ * the end against a device's OWN local chapters via `resolveLocalChapterId`, whose title
+ * fallback still needs the record's real (unbridged) title to find anything there.
+ * Already-matched records (real provider present) pass through unchanged -- bridging only ever
+ * helps the fallback path, never overrides a genuine match.
  */
-fun ProgressRecord.bridgedWith(aliases: List<MetadataAliasRecord>): ProgressRecord {
+fun SeriesProgressRecord.bridgedWith(aliases: List<MetadataAliasRecord>): SeriesProgressRecord {
     if (key.provider != null) return this
     val alias = aliases.find { it.normalizedTitle == key.normalizedTitle } ?: return this
     return copy(key = key.copy(provider = alias.provider, externalId = alias.externalId))

@@ -43,9 +43,9 @@ class MetadataAliasMergeTest {
 
     @Test
     fun bridging_fills_in_provider_for_an_unmatched_record_with_a_known_alias() {
-        val unmatched = ProgressRecord(
-            key = ProgressKey(null, null, "sirius", null, 1.0),
-            completed = false, lastPageIndex = 0, updatedAt = 0, deviceId = "d",
+        val unmatched = SeriesProgressRecord(
+            key = SeriesKey(null, null, "sirius"),
+            completedVolumes = emptyList(), inProgressVolumes = emptyList(), updatedAt = 0,
         )
 
         val bridged = unmatched.bridgedWith(listOf(alias(title = "sirius")))
@@ -57,9 +57,9 @@ class MetadataAliasMergeTest {
 
     @Test
     fun bridging_leaves_an_already_matched_record_untouched() {
-        val matched = ProgressRecord(
-            key = ProgressKey("KITSU", "7", "sirius", null, 1.0),
-            completed = false, lastPageIndex = 0, updatedAt = 0, deviceId = "d",
+        val matched = SeriesProgressRecord(
+            key = SeriesKey("KITSU", "7", "sirius"),
+            completedVolumes = emptyList(), inProgressVolumes = emptyList(), updatedAt = 0,
         )
 
         val result = matched.bridgedWith(listOf(alias(title = "sirius", provider = "ANILIST", externalId = "16498")))
@@ -69,9 +69,9 @@ class MetadataAliasMergeTest {
 
     @Test
     fun bridging_is_a_no_op_when_no_alias_matches_the_title() {
-        val unmatched = ProgressRecord(
-            key = ProgressKey(null, null, "some other title", null, 1.0),
-            completed = false, lastPageIndex = 0, updatedAt = 0, deviceId = "d",
+        val unmatched = SeriesProgressRecord(
+            key = SeriesKey(null, null, "some other title"),
+            completedVolumes = emptyList(), inProgressVolumes = emptyList(), updatedAt = 0,
         )
 
         val result = unmatched.bridgedWith(listOf(alias(title = "sirius")))

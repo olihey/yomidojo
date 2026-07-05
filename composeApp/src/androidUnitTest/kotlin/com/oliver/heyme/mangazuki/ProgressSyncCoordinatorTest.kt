@@ -7,12 +7,14 @@ import com.oliver.heyme.mangazuki.core.data.db.MangaDatabase
 import com.oliver.heyme.mangazuki.core.domain.Chapter
 import com.oliver.heyme.mangazuki.core.domain.ChapterFormat
 import com.oliver.heyme.mangazuki.core.domain.Series
+import com.oliver.heyme.mangazuki.core.sync.InProgressVolume
 import com.oliver.heyme.mangazuki.core.sync.MetadataAliasBackend
 import com.oliver.heyme.mangazuki.core.sync.MetadataAliasRecord
-import com.oliver.heyme.mangazuki.core.sync.ProgressKey
-import com.oliver.heyme.mangazuki.core.sync.ProgressRecord
+import com.oliver.heyme.mangazuki.core.sync.SeriesKey
+import com.oliver.heyme.mangazuki.core.sync.SeriesProgressRecord
 import com.oliver.heyme.mangazuki.core.sync.SyncBackend
 import com.oliver.heyme.mangazuki.core.sync.SyncCursor
+import com.oliver.heyme.mangazuki.core.sync.VolumeChapterKey
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -28,10 +30,10 @@ import kotlin.test.assertTrue
  */
 class ProgressSyncCoordinatorTest {
 
-    private class FakeSyncBackend(private val remote: List<ProgressRecord>) : SyncBackend {
-        var pushed: List<ProgressRecord>? = null
-        override suspend fun pull(since: SyncCursor?): List<ProgressRecord> = remote
-        override suspend fun push(changes: List<ProgressRecord>): SyncCursor {
+    private class FakeSyncBackend(private val remote: List<SeriesProgressRecord>) : SyncBackend {
+        var pushed: List<SeriesProgressRecord>? = null
+        override suspend fun pull(since: SyncCursor?): List<SeriesProgressRecord> = remote
+        override suspend fun push(changes: List<SeriesProgressRecord>): SyncCursor {
             pushed = changes
             return SyncCursor("test")
         }
@@ -73,16 +75,18 @@ class ProgressSyncCoordinatorTest {
             matchedSeries("s1", "Attack on Titan", "ANILIST", "16498"),
             listOf(chapter("c1", "s1", 1.0)),
         )
-        val remote = ProgressRecord(
-            key = ProgressKey("ANILIST", "16498", "attack on titan", null, 1.0),
-            completed = true, lastPageIndex = 0, updatedAt = 100, deviceId = "other-device",
+        val remote = SeriesProgressRecord(
+            key = SeriesKey("ANILIST", "16498", "attack on titan"),
+            completedVolumes = listOf(VolumeChapterKey(null, 1.0)),
+            inProgressVolumes = emptyList(),
+            updatedAt = 100,
         )
         val coordinator = ProgressSyncCoordinator(repo, FakeSyncBackend(listOf(remote)))
 
         coordinator.sync()
 
         val chapters = repo.observeChapters("s1").first()
-        assertTrue(chapters.single().completed, "remote's completed=true should apply to the local chapter")
+        assertTrue(chapters.single().completed, "remote's completed volume should apply to the local chapter")
     }
 
     @Test
@@ -95,25 +99,31 @@ class ProgressSyncCoordinatorTest {
         repo.markProgress("c1", lastPageIndex = 9, completed = true, deviceId = "this-device")
         val localWrite = repo.allProgressForSync().single()
 
-        val staleRemote = ProgressRecord(
-            key = ProgressKey("ANILIST", "16498", "attack on titan", null, 1.0),
-            completed = false, lastPageIndex = 0, updatedAt = localWrite.updatedAt - 1000, deviceId = "other-device",
+        val staleRemote = SeriesProgressRecord(
+            key = SeriesKey("ANILIST", "16498", "attack on titan"),
+            completedVolumes = emptyList(),
+            inProgressVolumes = listOf(InProgressVolume(null, 1.0, 0)),
+            updatedAt = localWrite.updatedAt - 1000,
         )
         val backend = FakeSyncBackend(listOf(staleRemote))
         ProgressSyncCoordinator(repo, backend).sync()
 
         val chapters = repo.observeChapters("s1").first()
         assertTrue(chapters.single().completed, "a newer local write must survive a stale remote record")
-        // The merge winner was the local record -- confirm it's what gets pushed back, not the stale remote.
-        assertEquals(true, backend.pushed?.single()?.completed)
+        // The merge winner carried the local completion forward -- confirm it's what gets pushed
+        // back, not the stale remote's in-progress marker.
+        assertEquals(listOf(VolumeChapterKey(null, 1.0)), backend.pushed?.single()?.completedVolumes)
+        assertTrue(backend.pushed?.single()?.inProgressVolumes.orEmpty().isEmpty())
     }
 
     @Test
     fun a_winner_for_an_unscanned_chapter_is_preserved_and_still_pushed_back() = runTest {
         val repo = newRepo() // no series/chapters persisted at all -- this device has none of this library yet
-        val remote = ProgressRecord(
-            key = ProgressKey("ANILIST", "16498", "attack on titan", null, 1.0),
-            completed = true, lastPageIndex = 0, updatedAt = 100, deviceId = "other-device",
+        val remote = SeriesProgressRecord(
+            key = SeriesKey("ANILIST", "16498", "attack on titan"),
+            completedVolumes = listOf(VolumeChapterKey(null, 1.0)),
+            inProgressVolumes = emptyList(),
+            updatedAt = 100,
         )
         val backend = FakeSyncBackend(listOf(remote))
 
@@ -134,9 +144,11 @@ class ProgressSyncCoordinatorTest {
         repo.persistSeries(unmatchedSeries("s1", "Vagabond"), listOf(chapter("c1", "s1", 1.0)))
         repo.markProgress("c1", lastPageIndex = 0, completed = false, deviceId = "this-device")
 
-        val remote = ProgressRecord(
-            key = ProgressKey("ANILIST", "999", "vagabond (2019)", null, 1.0),
-            completed = true, lastPageIndex = 5, updatedAt = 99_999_999_999_999L, deviceId = "other-device",
+        val remote = SeriesProgressRecord(
+            key = SeriesKey("ANILIST", "999", "vagabond (2019)"),
+            completedVolumes = listOf(VolumeChapterKey(null, 1.0)),
+            inProgressVolumes = emptyList(),
+            updatedAt = 99_999_999_999_999L,
         )
         val knownAlias = MetadataAliasRecord(
             normalizedTitle = "vagabond", provider = "ANILIST", externalId = "999",
@@ -146,7 +158,11 @@ class ProgressSyncCoordinatorTest {
         ProgressSyncCoordinator(repo, backend, FakeMetadataAliasBackend(listOf(knownAlias))).sync()
 
         assertEquals(1, backend.pushed?.size, "the alias should bridge local and remote into a single merged group")
-        assertEquals(true, backend.pushed?.single()?.completed, "remote's newer record should win the merge")
+        assertEquals(
+            listOf(VolumeChapterKey(null, 1.0)),
+            backend.pushed?.single()?.completedVolumes,
+            "remote's completed chapter should survive the merge",
+        )
     }
 
     @Test
