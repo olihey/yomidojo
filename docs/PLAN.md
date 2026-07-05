@@ -1308,7 +1308,7 @@ UI smoke tests (Compose) come later and stay thin; the logic tests above carry t
 | **2 — Reader + series** | `PageProvider` (incl. `pageSize`/spread detection §8), 4 reading modes, **gesture/polish bundle (§8.1)**, progress; series chapter/volume screen; cover badge; **selection mode + bulk read/unread (§7.5)**; **recently-read sort** | Read image + CBZ; resume; bulk-mark; tap zones + volume keys work — **done** |
 | **3 — Metadata** | AniList enrichment + matching + **rate-limited enrichment pipeline (§9.2)** + **Fix metadata re-search (§9.1)** + cover caching (app-internal, §9) | Real covers/descriptions; re-match fixes wrong matches; release-start sort live - done |
 | **4 — Cloud source** | ~~Add OneDrive~~ Add SMB (§6.1) to *validate the abstraction* — OneDrive turned out to be a dead end (Microsoft disables SAF root exposure for personal accounts); responsive + settings polish | A second source works without changing scanner/reader — **done for SMB**, see §6.1 |
-| **5 — Read-status sync** | `SyncBackend` over the user's cloud; device-independent keys; LWW merge | Progress/read-state converge across two devices — **built, pending real OAuth credentials to verify end-to-end**, see below |
+| **5 — Read-status sync** | `SyncBackend` over the user's cloud; device-independent keys; LWW merge | Sign-in + background sync verified on-device — **two-device convergence still unverified**, see below |
 
 *PDF slots in after Phase 2 whenever wanted (§15 → see §16); it blocks nothing.*
 
@@ -1398,7 +1398,7 @@ adult-content toggle, a score badge) to build on. Verified on-device: re-matchin
 
 ---
 
-**Phase 5 status: built, pending real OAuth credentials to verify end-to-end (2026-07-03).**
+**Phase 5 status: sign-in and background sync verified end-to-end on-device (2026-07-05).**
 The full §10 design (provider-scoped `ProgressKey`, the three-case matching rule, the
 two-pass `resolveSyncGroups` grouping algorithm, the deterministic `deviceId` tiebreak, the
 `progress.json` wire format) is implemented across `core:sync` (`SyncMerge.kt`,
@@ -1420,12 +1420,10 @@ against a real in-memory-SQLite `LibraryRepository` (mirroring `core:data`'s own
 write surviving a stale remote record, and an unresolvable remote record still round-tripping
 through `push()` so it isn't lost.
 
-The OAuth client id is sourced from `local.properties` (gitignored) via a `BuildConfig` field,
-not committed to source — not because it's a build-time secret in the usual sense (an
-Android-type OAuth client id is verified via the app's signing certificate, not by being
-hidden, and is trivially extractable from any distributed APK) but so it isn't tied to one
-Google Cloud project's id forever. **Two real bugs found during on-device verification, both
-fixed same-day:**
+The OAuth client id (and, as of the correction below, secret) is sourced from
+`local.properties` (gitignored) via `BuildConfig` fields, not committed to source, so neither
+is tied to one Google Cloud project forever. **Four real bugs found during on-device
+verification, all fixed same-day they were hit:**
 1. Enabling `buildConfig` for the first time in `composeApp` made `generateDebugBuildConfig`
    emit real Java source, which exposed a latent JVM-target mismatch against Kotlin's own
    target (17, whatever JDK runs the build) — the module's pre-existing `compileOptions`
@@ -1438,15 +1436,52 @@ fixed same-day:**
    `BuildConfig.GOOGLE_OAUTH_CLIENT_ID.isBlank()` before building the request and surfacing
    `SyncState.Error(...)` in Settings instead — confirmed on-device, no crash, clear inline
    message, "Sign in with Google" stays available to retry.
+3. **Decision correction:** the original design (§10) assumed an **Android-type** OAuth
+   client (package name + SHA-1, no secret) would work with AppAuth's custom-URI-scheme
+   redirect. It doesn't — Google's OAuth server now rejects custom-scheme redirects for
+   Android-type clients outright (`Error 400: invalid_request`, before any login prompt is
+   even shown; verified live against Google's current OAuth-for-native-apps docs). The fix is
+   a **Desktop app**-type OAuth client instead, whose only supported custom-scheme redirect is
+   the reverse-DNS-of-the-client-id form Google itself validates automatically:
+   `com.googleusercontent.apps.<client-id-prefix>:/oauth2redirect`. This is now derived in
+   `composeApp/build.gradle.kts` from `GOOGLE_OAUTH_CLIENT_ID` (never hand-typed), feeding both
+   the `appAuthRedirectScheme` manifest placeholder and the URI AppAuth actually sends, so the
+   two can't drift out of sync.
+4. Desktop-type clients also require the **client secret** in the token exchange/refresh
+   despite PKCE being used — Android/iOS client types have no secret at all, so this only
+   surfaced once the fix above was in place (`client_secret is missing` from Google's token
+   endpoint). Fixed by adding `GOOGLE_OAUTH_CLIENT_SECRET` (`local.properties` → `BuildConfig`,
+   same treatment as the client id) and passing it through AppAuth's `ClientSecretPost` /
+   `ClientAuthentication` on both `performTokenRequest` and `performActionWithFreshTokens`
+   (verified against AppAuth's own source, not assumed).
 
-**Not yet verified:** an actual successful sign-in and a real `progress.json` round-trip
-through Drive — both need a real Google Cloud OAuth client (Android-type, `drive.appdata`
-scope, package name + SHA-1 fingerprint) that only the app owner can create. Once
-`GOOGLE_OAUTH_CLIENT_ID` is set in `local.properties`, remaining verification is: sign-in
-completes and returns to the app signed-in; a `progress.json` file appears in `appDataFolder`
-(inspectable via the Drive API's own `files.list?spaces=appDataFolder`, since the folder is
-invisible in the normal Drive UI by design); and a two-device (or two-install) check that
-marking a chapter read on one converges to the other after a sync.
+**Verified on-device (2026-07-05):** real sign-in via a Desktop-type OAuth client completes
+and returns to the app signed-in (account picker → consent → `SettingsScreen` shows "Sync
+reading progress" + "Sign out", no error state); the post-sign-in fire-and-forget sync and a
+force-run of the scheduled `SyncWorker` job both completed with no exception logged and the
+periodic job rescheduling at its full 6-hour interval (not the 30s failure-backoff interval),
+strong evidence the Drive push/pull round-trip succeeded. **Not yet verified:** inspecting the
+actual `progress.json` content in `appDataFolder` directly (via `files.list?spaces=appDataFolder`,
+since the folder is invisible in the normal Drive UI by design), and a two-device/two-install
+convergence check that marking a chapter read on one shows read on the other after a sync.
+
+**Sync UX follow-ups, all verified on-device (2026-07-05):**
+- **"Last synced" byline** in Settings — `AppPreferences.recordSyncCompleted()` stamps
+  `nowEpochMillis()` on every successful `ProgressSyncCoordinator.sync()` (both the sign-in
+  trigger and `SyncWorker`), rendered via a new `formatDateTime` expect/actual (Android
+  `java.time`, iOS `NSDateFormatter`).
+- **Sync on every progress change**, not just sign-in/every-6h — `ReaderViewModel`,
+  `SeriesViewModel`, and `LibraryViewModel` now call a debounced `ProgressSyncScheduler`
+  (`AppGraph.requestSync`) after every progress-mutating write. Debounced (5s of no further
+  writes) rather than immediate, since a literal per-page-turn sync would mean a full Drive
+  round-trip (several HTTP calls) on every page while reading.
+- **"Sync in background" sub-toggle** in Settings, independent of the main "Sync reading
+  progress" switch — turning it off actually cancels the `SyncWorker` WorkManager registration
+  (`WorkManager.cancelUniqueWork`), not just a no-op inside `doWork()`, so the OS stops waking
+  the process on a schedule at all. Confirmed via `dumpsys jobscheduler` that the job
+  disappears/reappears with the toggle, and that the off state survives an app restart without
+  the job being silently rescheduled. Sign-in sync and the debounced per-change sync above are
+  unaffected, since both only run while the app is already open.
 
 ---
 

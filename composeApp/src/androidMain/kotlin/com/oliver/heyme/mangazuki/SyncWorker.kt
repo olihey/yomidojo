@@ -30,7 +30,7 @@ class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
         val repository = LibraryRepository(database)
 
         return try {
-            ProgressSyncCoordinator(repository, GoogleDriveSyncBackend(authManager)).sync()
+            ProgressSyncCoordinator(repository, GoogleDriveSyncBackend(authManager), appPrefs::recordSyncCompleted).sync()
             Result.success()
         } catch (t: Throwable) {
             android.util.Log.w("SyncWorker", "background sync failed", t)

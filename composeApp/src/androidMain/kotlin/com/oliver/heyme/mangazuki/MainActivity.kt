@@ -15,6 +15,7 @@ import com.oliver.heyme.mangazuki.core.data.createMangaDatabase
 import com.oliver.heyme.mangazuki.core.metadata.AniListMetadataProvider
 import com.oliver.heyme.mangazuki.core.metadata.KitsuMetadataProvider
 import com.oliver.heyme.mangazuki.core.scanner.LibraryScanner
+import com.oliver.heyme.mangazuki.core.sync.GoogleAuthManager
 import com.oliver.heyme.mangazuki.core.sync.GoogleDriveSyncBackend
 import com.russhwolf.settings.SharedPreferencesSettings
 import coil3.ImageLoader
@@ -87,23 +88,32 @@ class MainActivity : ComponentActivity() {
         val metadataProviders = MetadataProviders(AniListMetadataProvider(), KitsuMetadataProvider())
         val coverClient = HttpClient()
         val enricher = MetadataEnricher(repository, { metadataProviders.get(appPrefs.metadataProvider.value) }, coverClient, coversDir)
+
+        // Google Drive sync (PLAN.md §10) -- authManager is Android-only (AppAuth), so AppGraph
+        // (commonMain) only ever sees the resulting StateFlow, never the manager itself, the
+        // same reasoning as the SAF-specific pickFolder launcher below. Built before
+        // LibraryViewModel so its requestSync callback can be threaded into the constructor.
+        val authManager = createGoogleAuthManager(applicationContext)
+        val syncState = MutableStateFlow<SyncState>(if (authManager.isSignedIn()) SyncState.SignedIn else SyncState.SignedOut)
+        val syncScheduler = ProgressSyncScheduler(activityScope) { runSyncIfEnabled(appPrefs, authManager, repository) }
+
         viewModel = LibraryViewModel(
             repository, scanner, source, localSource, smbSourceFactory, prefs, enricher, appPrefs, coversDir,
             clearImageCache = { imageLoader.diskCache?.clear(); imageLoader.memoryCache?.clear() },
+            requestSync = syncScheduler::requestSync,
         )
         readerPrefs = ReaderPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
         )
 
-        // Google Drive sync (PLAN.md §10) -- authManager is Android-only (AppAuth), so AppGraph
-        // (commonMain) only ever sees the resulting StateFlow, never the manager itself, the
-        // same reasoning as the SAF-specific pickFolder launcher below.
-        val authManager = createGoogleAuthManager(applicationContext)
-        val syncState = MutableStateFlow<SyncState>(if (authManager.isSignedIn()) SyncState.SignedIn else SyncState.SignedOut)
-
         val graph = AppGraph(
             repository, source, viewModel, readerPrefs, appPrefs,
             metadataProviders, enricher, coverClient, coversDir, syncState,
+            requestSync = syncScheduler::requestSync,
+            onBackgroundSyncEnabledChanged = { enabled ->
+                appPrefs.setBackgroundSyncEnabled(enabled)
+                if (enabled) scheduleBackgroundSync() else cancelBackgroundSync()
+            },
         )
 
         pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -133,15 +143,13 @@ class MainActivity : ComponentActivity() {
                 if (outcome.isSuccess) {
                     // Fire-and-forget immediate sync, same "don't make them wait for the next
                     // scheduled background run" pattern as MetadataEnricher's foreground trigger.
-                    activityScope.launch {
-                        runCatching { ProgressSyncCoordinator(repository, GoogleDriveSyncBackend(authManager)).sync() }
-                    }
+                    activityScope.launch { runSyncIfEnabled(appPrefs, authManager, repository) }
                 }
             }
         }
 
         scheduleBackgroundScan()
-        scheduleBackgroundSync()
+        if (appPrefs.backgroundSyncEnabled.value) scheduleBackgroundSync()
 
         enableEdgeToEdge()
         setContent {
@@ -197,5 +205,23 @@ class MainActivity : ComponentActivity() {
             .build()
         WorkManager.getInstance(applicationContext)
             .enqueueUniquePeriodicWork("progress-sync", ExistingPeriodicWorkPolicy.KEEP, request)
+    }
+
+    /** Settings' "Sync in background" sub-toggle turning off (PLAN.md §10) -- actually cancels
+     * the WorkManager registration rather than just no-opping inside [SyncWorker], so the OS
+     * stops waking the process up on a schedule at all (the whole point of the toggle). Sync
+     * while the app is already open -- sign-in, [ProgressSyncScheduler]'s per-change trigger --
+     * is unaffected, since neither depends on this periodic job. */
+    private fun cancelBackgroundSync() {
+        WorkManager.getInstance(applicationContext).cancelUniqueWork("progress-sync")
+    }
+
+    /** Shared by the post-sign-in immediate sync and [ProgressSyncScheduler]'s debounced
+     * per-change trigger (PLAN.md §10) -- both need the same signed-in/enabled guard [SyncWorker]
+     * already applies for its periodic run, just against this Activity's already-live instances
+     * rather than a freshly built throwaway graph. */
+    private suspend fun runSyncIfEnabled(appPrefs: AppPreferences, authManager: GoogleAuthManager, repository: LibraryRepository) {
+        if (!appPrefs.syncEnabled.value || !authManager.isSignedIn()) return
+        runCatching { ProgressSyncCoordinator(repository, GoogleDriveSyncBackend(authManager), appPrefs::recordSyncCompleted).sync() }
     }
 }

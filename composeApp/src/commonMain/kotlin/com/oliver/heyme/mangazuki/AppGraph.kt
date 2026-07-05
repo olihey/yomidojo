@@ -21,4 +21,14 @@ class AppGraph(
      * plain callbacks passed into [App], not held here, since triggering them needs an Android
      * `Activity`/`Intent` (the same reason `onPickFolder` is a callback, not a stored field). */
     val syncState: StateFlow<SyncState>,
+    /** Debounced trigger (PLAN.md §10) called by view models after a progress-mutating write, so
+     * read status converges across devices without waiting for the next 6-hourly [SyncWorker]
+     * run. Backed by a [ProgressSyncScheduler] built in `MainActivity` -- a plain callback, not a
+     * stored dependency, for the same reason [syncState]'s own actions are callbacks. */
+    val requestSync: () -> Unit = {},
+    /** Settings' "Sync in background" sub-toggle (PLAN.md §10) -- persists
+     * [AppPreferences.setBackgroundSyncEnabled] *and* (de)schedules the actual WorkManager job,
+     * since a merely-persisted flag wouldn't stop the OS from waking the process up on schedule.
+     * A callback for the same Android-only reason [syncState]'s sign-in actions are. */
+    val onBackgroundSyncEnabledChanged: (Boolean) -> Unit = {},
 )

@@ -19,6 +19,10 @@ import kotlinx.coroutines.sync.withLock
 class ProgressSyncCoordinator(
     private val repository: LibraryRepository,
     private val backend: SyncBackend,
+    // Notifies (e.g. AppPreferences.recordSyncCompleted) once pull->merge->apply->push all
+    // succeed -- called from here rather than duplicated at each of this class's two call sites
+    // (MainActivity's foreground trigger, SyncWorker's periodic run).
+    private val onSyncCompleted: () -> Unit = {},
 ) {
     /** Wrapped in the same [libraryWriteMutex] as [LibrarySyncer.sync]/[MetadataEnricher.enrichPending]
      * — this writes `reading_progress` rows a concurrent rescan could also touch. */
@@ -39,6 +43,7 @@ class ProgressSyncCoordinator(
         }
 
         backend.push(winners)
+        onSyncCompleted()
     }
 }
 

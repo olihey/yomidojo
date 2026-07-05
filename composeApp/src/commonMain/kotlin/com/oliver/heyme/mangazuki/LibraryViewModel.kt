@@ -52,6 +52,8 @@ class LibraryViewModel(
      * IDs (§5) mean a later re-scan of the same folder recomputes the *same* IDs, so without this
      * a stale cached bitmap could resurface under an old cache key even after a full DB reset. */
     private val clearImageCache: () -> Unit = {},
+    /** Debounced cloud-sync trigger (PLAN.md §10) — see [AppGraph.requestSync]. */
+    private val requestSync: () -> Unit = {},
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
     private val syncer = LibrarySyncer(repository, scanner)
@@ -236,6 +238,7 @@ class LibraryViewModel(
         val ids = selectedIds.value.toList()
         scope.launch {
             repository.markSeriesProgress(ids, completed, appPreferences.deviceId)
+            requestSync()
             exitSelectionMode()
         }
     }

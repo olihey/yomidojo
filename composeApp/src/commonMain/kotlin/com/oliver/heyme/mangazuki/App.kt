@@ -43,6 +43,7 @@ fun App(graph: AppGraph, onPickFolder: () -> Unit, onSignIn: () -> Unit = {}, on
                     syncState = graph.syncState,
                     onSignIn = onSignIn,
                     onSignOut = onSignOut,
+                    onBackgroundSyncEnabledChanged = graph.onBackgroundSyncEnabledChanged,
                 )
             }
             composable("series/{seriesId}") { entry ->
@@ -51,6 +52,7 @@ fun App(graph: AppGraph, onPickFolder: () -> Unit, onSignIn: () -> Unit = {}, on
                     SeriesViewModel(
                         graph.repository, graph.source, seriesId,
                         graph.metadataProviders, graph.appPreferences, graph.coverClient, graph.coversDir,
+                        requestSync = graph.requestSync,
                     )
                 }
                 SeriesScreen(
@@ -101,6 +103,7 @@ private fun ReaderHost(
         ReaderViewModel(
             graph.repository, graph.source, chapter, seriesDirection, title, nextChapter,
             graph.readerPreferences, graph.appPreferences.deviceId,
+            requestSync = graph.requestSync,
         )
     }
     ReaderScreen(viewModel, onBack, onNavigateToChapter)

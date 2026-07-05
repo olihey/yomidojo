@@ -16,6 +16,23 @@ plugins {
 val localProperties = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
+val googleOAuthClientId = localProperties.getProperty("GOOGLE_OAUTH_CLIENT_ID", "")
+// Google's "Desktop app" client type (PLAN.md §18) issues a real client secret and requires it
+// in the token exchange/refresh even though PKCE is also used -- unlike Android/iOS client
+// types, which have no secret at all. Same local.properties/gitignore treatment as the id.
+// GOOGLE_OAUTH_CLIENT_SECRET goes in local.properties alongside GOOGLE_OAUTH_CLIENT_ID.
+val googleOAuthClientSecret = localProperties.getProperty("GOOGLE_OAUTH_CLIENT_SECRET", "")
+
+// Google's OAuth server no longer accepts a custom URI scheme redirect for "Android"-type
+// clients (PLAN.md §18) -- the client must be a "Desktop app" type, whose only supported custom
+// scheme is this exact reverse-DNS-of-the-client-id form (verified live against Google's own
+// OAuth docs). Derived here, not hand-typed, so the manifest placeholder and the redirect URI
+// AppAuth actually sends (GoogleAuthManagerFactory.kt) can never drift out of sync.
+val googleOAuthRedirectScheme = googleOAuthClientId
+    .substringBefore(".apps.googleusercontent.com")
+    .takeIf { it.isNotBlank() }
+    ?.let { "com.googleusercontent.apps.$it" }
+    ?: "com.oliver.heyme.mangazuki" // placeholder so the manifest merge still succeeds when unset
 
 kotlin {
     androidTarget()
@@ -88,9 +105,11 @@ android {
         // AppAuth's own manifest (pulled in transitively via core:sync, PLAN.md §10) declares
         // its redirect-catching activity with this placeholder -- required for the manifest
         // merge to succeed at all, independent of whether real OAuth credentials are wired in
-        // yet. Reverse-domain package name, the standard AppAuth-on-Android convention.
-        manifestPlaceholders["appAuthRedirectScheme"] = "com.oliver.heyme.mangazuki"
-        buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", "\"${localProperties.getProperty("GOOGLE_OAUTH_CLIENT_ID", "")}\"")
+        // yet.
+        manifestPlaceholders["appAuthRedirectScheme"] = googleOAuthRedirectScheme
+        buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", "\"$googleOAuthClientId\"")
+        buildConfigField("String", "GOOGLE_OAUTH_CLIENT_SECRET", "\"$googleOAuthClientSecret\"")
+        buildConfigField("String", "GOOGLE_OAUTH_REDIRECT_SCHEME", "\"$googleOAuthRedirectScheme\"")
     }
 
     buildFeatures {

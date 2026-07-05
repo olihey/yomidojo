@@ -30,6 +30,8 @@ class SeriesViewModel(
     private val appPreferences: AppPreferences,
     private val coverClient: HttpClient,
     private val coversDir: String,
+    /** Debounced cloud-sync trigger (PLAN.md §10) — see [AppGraph.requestSync]. */
+    private val requestSync: () -> Unit = {},
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
     val series: StateFlow<DomainSeries?> =
@@ -90,6 +92,7 @@ class SeriesViewModel(
             val nowCompleted = !chapter.completed
             val lastPage = if (nowCompleted) (chapter.pageCount ?: 1) - 1 else 0
             repository.markProgress(chapter.id, lastPage.coerceAtLeast(0), nowCompleted, appPreferences.deviceId)
+            requestSync()
         }
     }
 
@@ -180,6 +183,7 @@ class SeriesViewModel(
         val entries = chapters.value.filter { it.id in selectedIds.value }.map { it.id to it.pageCount }
         scope.launch {
             repository.markChaptersProgress(entries, completed, appPreferences.deviceId)
+            requestSync()
             exitSelectionMode()
         }
     }

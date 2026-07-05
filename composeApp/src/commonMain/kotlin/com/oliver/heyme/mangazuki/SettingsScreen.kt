@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.oliver.heyme.mangazuki.core.domain.ReadingMode
+import com.oliver.heyme.mangazuki.core.domain.formatDateTime
 import kotlinx.coroutines.flow.StateFlow
 
 fun ThemeMode.label(): String = when (this) {
@@ -77,6 +78,7 @@ fun SettingsScreen(
     syncState: StateFlow<SyncState> = kotlinx.coroutines.flow.MutableStateFlow(SyncState.SignedOut),
     onSignIn: () -> Unit = {},
     onSignOut: () -> Unit = {},
+    onBackgroundSyncEnabledChanged: (Boolean) -> Unit = {},
 ) {
     var readingMode by remember { mutableStateOf(prefs.defaultReadingMode) }
     var invertTapZones by remember { mutableStateOf(prefs.invertTapZones) }
@@ -86,6 +88,8 @@ fun SettingsScreen(
     val titleLanguage by appPreferences.titleLanguage.collectAsState()
     val metadataProvider by appPreferences.metadataProvider.collectAsState()
     val syncEnabled by appPreferences.syncEnabled.collectAsState()
+    val lastSyncedAt by appPreferences.lastSyncedAt.collectAsState()
+    val backgroundSyncEnabled by appPreferences.backgroundSyncEnabled.collectAsState()
     val sync by syncState.collectAsState()
 
     Scaffold(
@@ -261,6 +265,13 @@ fun SettingsScreen(
                         subtitle = "Pauses syncing without signing out",
                         checked = syncEnabled,
                         onCheckedChange = appPreferences::setSyncEnabled,
+                        byline = lastSyncedAt?.let { "Last synced ${formatDateTime(it)}" } ?: "Not synced yet",
+                    )
+                    SettingSwitchRow(
+                        title = "Sync in background",
+                        subtitle = "Off: only syncs while the app is open — no scheduled battery/network use",
+                        checked = backgroundSyncEnabled,
+                        onCheckedChange = onBackgroundSyncEnabledChanged,
                     )
                     TextButton(onClick = onSignOut, modifier = Modifier.padding(horizontal = 8.dp)) { Text("Sign out") }
                 }
@@ -329,7 +340,13 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingSwitchRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SettingSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    byline: String? = null,
+) {
     Row(
         Modifier.fillMaxWidth()
             .clickable { onCheckedChange(!checked) }
@@ -339,6 +356,9 @@ private fun SettingSwitchRow(title: String, subtitle: String, checked: Boolean, 
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (byline != null) {
+                Text(byline, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         Switch(checked = checked, onCheckedChange = onCheckedChange)
     }

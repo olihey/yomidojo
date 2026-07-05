@@ -10,6 +10,9 @@ import net.openid.appauth.AuthorizationRequest
 import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
 import net.openid.appauth.AuthorizationServiceConfiguration
+import net.openid.appauth.ClientAuthentication
+import net.openid.appauth.ClientSecretPost
+import net.openid.appauth.NoClientAuthentication
 import net.openid.appauth.ResponseTypeValues
 import kotlin.coroutines.resume
 
@@ -19,15 +22,21 @@ import kotlin.coroutines.resume
  * AppAuth handles PKCE (code verifier/challenge) and the CSRF state param automatically when
  * building the request -- neither is done by hand here.
  *
- * [clientId]/[redirectUri] are plain constructor parameters rather than read from anywhere in
- * this module -- this class is deliberately unaware of where they're sourced from (a
+ * [clientId]/[clientSecret]/[redirectUri] are plain constructor parameters rather than read from
+ * anywhere in this module -- this class is deliberately unaware of where they're sourced from (a
  * Gradle-injected BuildConfig field backed by `local.properties`, in this app's case).
  * Google's OAuth2 endpoints below are fixed and well-known (verified live against Google's own
  * developer docs, not assumed) -- there is no per-app discovery step needed for them.
+ *
+ * [clientSecret] is required here despite PKCE (PLAN.md §18): Google's "Desktop app" client
+ * type -- the only type that supports the custom-URI-scheme redirect this class uses -- rejects
+ * the token exchange/refresh with "client_secret is missing" otherwise, unlike Android/iOS
+ * client types which have no secret at all.
  */
 class GoogleAuthManager(
     context: Context,
     private val clientId: String,
+    private val clientSecret: String?,
     private val redirectUri: String,
     private val authStore: GoogleAuthStore,
 ) {
@@ -37,6 +46,9 @@ class GoogleAuthManager(
         Uri.parse("https://accounts.google.com/o/oauth2/v2/auth"),
         Uri.parse("https://oauth2.googleapis.com/token"),
     )
+
+    private val clientAuth: ClientAuthentication =
+        clientSecret?.let { ClientSecretPost(it) } ?: NoClientAuthentication.INSTANCE
 
     /** The intent to launch via an `ActivityResultLauncher<Intent>` to start sign-in. */
     fun signInIntent(): Intent {
@@ -59,7 +71,7 @@ class GoogleAuthManager(
         state.update(response, authException)
 
         return suspendCancellableCoroutine { cont ->
-            service.performTokenRequest(response.createTokenExchangeRequest()) { tokenResponse, tokenException ->
+            service.performTokenRequest(response.createTokenExchangeRequest(), clientAuth) { tokenResponse, tokenException ->
                 state.update(tokenResponse, tokenException)
                 authStore.save(state.jsonSerializeString())
                 if (tokenResponse != null) {
@@ -77,7 +89,7 @@ class GoogleAuthManager(
     suspend fun accessToken(): String? {
         val state = authStore.load()?.let { AuthState.jsonDeserialize(it) } ?: return null
         return suspendCancellableCoroutine { cont ->
-            state.performActionWithFreshTokens(service) { token, _, ex ->
+            state.performActionWithFreshTokens(service, clientAuth) { token, _, ex ->
                 authStore.save(state.jsonSerializeString()) // a refresh may have rotated tokens
                 cont.resume(if (ex != null) null else token)
             }

@@ -1,5 +1,6 @@
 package com.oliver.heyme.mangazuki
 
+import com.oliver.heyme.mangazuki.core.domain.nowEpochMillis
 import com.oliver.heyme.mangazuki.core.domain.randomUuid
 import com.russhwolf.settings.Settings
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,11 +78,41 @@ class AppPreferences(private val settings: Settings) {
         settings.putBoolean(KEY_SYNC_ENABLED, enabled)
     }
 
+    /** When a [ProgressSyncCoordinator.sync] last completed without throwing -- from either the
+     * foreground sign-in trigger or the periodic `SyncWorker` -- for Settings' "last synced"
+     * byline. Null until the first sync ever completes. */
+    private val _lastSyncedAt = MutableStateFlow(settings.getLongOrNull(KEY_LAST_SYNCED_AT))
+    val lastSyncedAt: StateFlow<Long?> = _lastSyncedAt
+
+    fun recordSyncCompleted() {
+        val now = nowEpochMillis()
+        _lastSyncedAt.value = now
+        settings.putLong(KEY_LAST_SYNCED_AT, now)
+    }
+
+    /** Whether the periodic (every-6h) `SyncWorker` WorkManager job should be scheduled at all
+     * (PLAN.md §10) -- independent of [syncEnabled], which pauses sync entirely. Turning this
+     * off doesn't stop syncing outright: the sign-in trigger and the debounced
+     * [ProgressSyncScheduler] one still run, but only while the app is already open/foregrounded
+     * -- this just stops the OS from waking the process up on a schedule to check for changes.
+     * Only a plain persisted flag here; actually (de)scheduling the WorkManager job is an
+     * Android-only side effect done by the caller (`MainActivity`'s
+     * `AppGraph.onBackgroundSyncEnabledChanged`), the same reasoning as [syncState]'s callbacks. */
+    private val _backgroundSyncEnabled = MutableStateFlow(settings.getBoolean(KEY_BACKGROUND_SYNC_ENABLED, true))
+    val backgroundSyncEnabled: StateFlow<Boolean> = _backgroundSyncEnabled
+
+    fun setBackgroundSyncEnabled(enabled: Boolean) {
+        _backgroundSyncEnabled.value = enabled
+        settings.putBoolean(KEY_BACKGROUND_SYNC_ENABLED, enabled)
+    }
+
     private companion object {
         const val KEY_THEME_MODE = "app.themeMode"
         const val KEY_TITLE_LANGUAGE = "app.titleLanguage"
         const val KEY_METADATA_PROVIDER = "app.metadataProvider"
         const val KEY_DEVICE_ID = "app.deviceId"
         const val KEY_SYNC_ENABLED = "app.syncEnabled"
+        const val KEY_LAST_SYNCED_AT = "app.lastSyncedAt"
+        const val KEY_BACKGROUND_SYNC_ENABLED = "app.backgroundSyncEnabled"
     }
 }
