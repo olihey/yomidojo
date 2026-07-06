@@ -94,6 +94,32 @@ fun LibraryScreen(
         SmbConnectDialog(viewModel = viewModel, onDismiss = { showSmbDialog = false })
     }
 
+    // The redesigned "Manga Shelf" look (Claude Design, imported 2026-07-06) only covers Grid
+    // browsing -- List/Detailed keep the plain Material layout below unchanged, and entering
+    // selection mode (long-press, bulk mark read/unread) falls back to it too, since that's a
+    // secondary tool the design doesn't cover either.
+    if (!selectionMode && viewMode == ViewMode.GRID) {
+        MangaShelfGrid(
+            viewModel = viewModel,
+            progress = progress,
+            enrichProgress = enrichProgress,
+            canRescan = canRescan,
+            needsReGrant = needsReGrant,
+            cards = cards,
+            query = query,
+            sort = sort,
+            ascending = ascending,
+            filter = filter,
+            viewMode = viewMode,
+            titleLanguage = titleLanguage,
+            onAddSource = openChooser,
+            onSeriesClick = onSeriesClick,
+            onSettingsClick = onSettingsClick,
+            onLongClickSeries = viewModel::enterSelectionMode,
+        )
+        return
+    }
+
     Scaffold(
         topBar = {
             if (selectionMode) {
@@ -509,7 +535,7 @@ private fun SeriesReadStatusOverlay(card: LibraryCard, modifier: Modifier = Modi
  * nothing good enough (Fix Metadata, §9.1, is the way out of that state).
  */
 @Composable
-private fun MetadataStatusOverlay(card: LibraryCard, modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 24.dp) {
+internal fun MetadataStatusOverlay(card: LibraryCard, modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 24.dp) {
     if (card.externalId != null) return
     // "?" (not checked yet) is a neutral pending state, not a problem — yellow, distinct from
     // "✕" (checked, no good candidate found), which keeps the red also used for the status row's
