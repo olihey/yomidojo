@@ -1,6 +1,8 @@
 package com.oliver.heyme.mangazuki
 
 import com.oliver.heyme.mangazuki.core.data.LibraryRepository
+import com.oliver.heyme.mangazuki.core.domain.MetadataAliasRow
+import com.oliver.heyme.mangazuki.core.domain.normalizeSortTitle
 import com.oliver.heyme.mangazuki.core.metadata.MetadataProvider
 import com.oliver.heyme.mangazuki.core.metadata.bestMatch
 import io.ktor.client.HttpClient
@@ -21,6 +23,12 @@ import kotlinx.coroutines.sync.withLock
 class MetadataEnricher(
     private val repository: LibraryRepository,
     private val providerFor: () -> MetadataProvider,
+    /** Resolves a [MetadataAliasRow.provider] string (e.g. "ANILIST") back to the concrete
+     * provider that recorded it (PLAN.md §10 follow-up, 2026-07-06) -- an alias's own match can
+     * come from a *different* provider than whatever's currently selected in Settings, so this
+     * can't just reuse [providerFor]. Null on an unrecognized/corrupted provider string, in
+     * which case the alias is skipped in favor of a fresh search rather than guessing. */
+    private val providerNamed: (String) -> MetadataProvider?,
     private val coverClient: HttpClient,
     private val coversDir: String,
 ) {
@@ -34,26 +42,43 @@ class MetadataEnricher(
         val provider = providerFor()
         val pending = repository.unmatchedSeries()
         val total = pending.size
+        // A series whose normalized title already has a recorded Fix Metadata alias (PLAN.md
+        // §10 follow-up, 2026-07-06) -- e.g. re-scanned after a library reset, or matched fresh
+        // on a second device -- gets that exact match applied directly instead of re-running a
+        // fuzzy search that could easily land on a different (wrong) entry for an ambiguous
+        // title. Fetched once up front, not per series: the alias table only ever grows from
+        // deliberate user actions, so it's small regardless of library size.
+        val aliasByTitle: Map<String, MetadataAliasRow> = repository.allMetadataAliases().associateBy { it.normalizedOldTitle }
         pending.forEachIndexed { index, (seriesId, rawTitle) ->
             try {
-                val query = cleanSearchQuery(rawTitle)
-                val match = bestMatch(query, provider.search(query))
-                if (match == null) {
-                    // A real search that came back with nothing good enough — distinct from a
-                    // network/rate-limit failure below, which leaves the series "never checked"
-                    // (not "checked, no match") so it's retried rather than stuck showing ✕.
-                    repository.markMetadataChecked(seriesId)
+                val alias = aliasByTitle[normalizeSortTitle(rawTitle)]
+                val aliasProvider = alias?.let { providerNamed(it.provider) }
+                if (alias != null && aliasProvider != null) {
+                    applyMatch(seriesId, aliasProvider, alias.externalId)
                 } else {
-                    val details = provider.details(match.externalId)
-                    val coverPath = downloadCover(coverClient, coversDir, details.externalId, details.coverUrl)
-                    val bannerPath = downloadBanner(coverClient, coversDir, details.externalId, details.bannerUrl)
-                    repository.applyMetadata(seriesId, details, coverPath, bannerPath)
+                    val query = cleanSearchQuery(rawTitle)
+                    val match = bestMatch(query, provider.search(query))
+                    if (match == null) {
+                        // A real search that came back with nothing good enough — distinct from a
+                        // network/rate-limit failure below, which leaves the series "never checked"
+                        // (not "checked, no match") so it's retried rather than stuck showing ✕.
+                        repository.markMetadataChecked(seriesId)
+                    } else {
+                        applyMatch(seriesId, provider, match.externalId)
+                    }
                 }
             } catch (t: Throwable) {
                 // Best-effort — leave this one unmatched, try again next pass.
             }
             onProgress(index + 1, total)
         }
+    }
+
+    private suspend fun applyMatch(seriesId: String, provider: MetadataProvider, externalId: String) {
+        val details = provider.details(externalId)
+        val coverPath = downloadCover(coverClient, coversDir, details.externalId, details.coverUrl)
+        val bannerPath = downloadBanner(coverClient, coversDir, details.externalId, details.bannerUrl)
+        repository.applyMetadata(seriesId, details, coverPath, bannerPath)
     }
 }
 

@@ -93,7 +93,9 @@ class MainActivity : ComponentActivity() {
         )
         val metadataProviders = MetadataProviders(AniListMetadataProvider(), KitsuMetadataProvider())
         val coverClient = HttpClient()
-        val enricher = MetadataEnricher(repository, { metadataProviders.get(appPrefs.metadataProvider.value) }, coverClient, coversDir)
+        val enricher = MetadataEnricher(
+            repository, { metadataProviders.get(appPrefs.metadataProvider.value) }, metadataProviders::byName, coverClient, coversDir,
+        )
 
         // Google Drive sync (PLAN.md §10) -- authManager is Android-only (AppAuth), so AppGraph
         // (commonMain) only ever sees the resulting StateFlow, never the manager itself, the

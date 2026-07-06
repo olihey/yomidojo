@@ -10,4 +10,10 @@ class MetadataProviders(private val aniList: MetadataProvider, private val kitsu
         MetadataProviderChoice.ANILIST -> aniList
         MetadataProviderChoice.KITSU -> kitsu
     }
+
+    /** Resolves a persisted provider-id string (e.g. [RemoteWorkDetails.providerId], a
+     * [com.oliver.heyme.mangazuki.core.domain.MetadataAliasRow.provider]) back to a concrete
+     * provider -- null on anything unrecognized rather than guessing, since this reads data that
+     * outlives the enum (a synced alias, a stored match) and could in principle be stale. */
+    fun byName(name: String): MetadataProvider? = runCatching { MetadataProviderChoice.valueOf(name) }.getOrNull()?.let(::get)
 }

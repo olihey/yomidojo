@@ -50,7 +50,9 @@ class ScanWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
                 SharedPreferencesSettings(applicationContext.getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
             )
             val providers = MetadataProviders(AniListMetadataProvider(), KitsuMetadataProvider())
-            MetadataEnricher(repository, { providers.get(appPrefs.metadataProvider.value) }, HttpClient(), coversDir).enrichPending()
+            MetadataEnricher(
+                repository, { providers.get(appPrefs.metadataProvider.value) }, providers::byName, HttpClient(), coversDir,
+            ).enrichPending()
             Result.success()
         } catch (t: Throwable) {
             android.util.Log.w("ScanWorker", "background scan failed", t)

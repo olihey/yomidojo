@@ -1525,17 +1525,40 @@ with the same last-write-wins-by-`(updatedAt, deviceId)` rule as progress
 (`resolveAliasWinners`), keyed by title rather than progress's three-case matching, since an
 alias's key *is* its title.
 
-Deliberately **not** done: applying a learned alias to a local series' own metadata
-automatically. The alias only ever helps progress converge; a device still needs its own Fix
-Metadata run (or the background enrichment pipeline) to see the real title/cover/description
-for a series — a decision to keep the blast radius of this feature to sync only.
-
 Verified: full unit coverage in `core:sync` (`MetadataAliasMergeTest` — winner selection,
 tiebreak determinism, bridging fills/leaves-alone/no-ops correctly) and
 `ProgressSyncCoordinatorTest` (a worked example showing two records that share **no** grouping
 key without a known alias — different raw titles, one missing a provider — merge into one once
 the alias is known, and that aliases themselves merge/push with the same LWW semantics as
 progress).
+
+**Follow-up: `MetadataEnricher` now consults known aliases before searching (found/fixed
+2026-07-06).** The note above originally read "deliberately not done: applying a learned alias to
+a local series' own metadata automatically" — that held until a real bug showed why it was wrong
+for the *same-device* case: reset the library, rescan a series, Fix Metadata it (recording an
+alias), reset the library again, rescan the same series — `enrichPending()` always re-ran a fresh
+fuzzy search rather than reusing its own already-known-correct match, and for a title common
+enough to have multiple candidate results, that fresh search could easily land on the wrong one.
+`resetLibrary()` deliberately spares `metadata_alias`, so the correct alias was always sitting
+there locally; it just wasn't being read.
+
+`MetadataEnricher.enrichPending()` now builds a `normalizedOldTitle -> MetadataAliasRow` map from
+`LibraryRepository.allMetadataAliases()` once per pass, and for each unmatched series checks it
+by `normalizeSortTitle(rawTitle)` before falling back to search. A hit applies that exact
+(provider, externalId) directly — no `search()` call at all — via a new `providerNamed: (String)
+-> MetadataProvider?` constructor parameter (`MetadataProviders.byName`), needed because an
+alias's own provider can differ from whichever provider is currently selected in Settings. An
+alias whose `provider` string doesn't resolve to a known provider (e.g. a retired one) falls back
+to a fresh search rather than skipping the series. This is still scoped to the *matching* step
+only — the alias table itself is still written exclusively by manual Fix Metadata actions, not by
+this pipeline, so the "manual fixes only, not the automatic pipeline" scoping above is unchanged;
+what changed is that the automatic pipeline now *reads* that record instead of ignoring it.
+
+Verified: `MetadataEnricherTest` (new) — an aliased series applies the alias's match with zero
+`search()` calls, an unaliased series still searches normally (regression), and an alias with an
+unresolvable provider string falls back to search rather than failing the series. Reproduced and
+confirmed fixed on the real device: reset library → rescan → Fix Metadata → reset library again →
+rescan again now reapplies the same match automatically instead of re-guessing.
 
 **Debug section in Settings (2026-07-05, dev-build only).** Since `appDataFolder` can't be
 browsed through Drive's own UI, Settings gains a "Debug" section (`GoogleDriveSyncBackend`'s
