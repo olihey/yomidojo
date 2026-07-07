@@ -2,7 +2,9 @@ package com.oliver.heyme.mangazuki
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -10,6 +12,7 @@ import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,7 +28,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -35,16 +40,13 @@ import androidx.compose.foundation.pager.PagerScope
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -58,19 +60,31 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.oliver.heyme.mangazuki.core.data.ChapterCard
 import com.oliver.heyme.mangazuki.core.domain.ReadingMode
@@ -106,9 +120,12 @@ fun ReaderScreen(viewModel: ReaderViewModel, onBack: () -> Unit, onNavigateToCha
     }
 
     KeepScreenOn(enabled = true)
-    // The system bars follow the chrome overlay: shown together, hidden together.
+    // Always immersive, whether or not the chrome overlay is showing -- the overlay's own top/
+    // bottom bars (windowInsetsPadding'd for statusBars/navigationBars) already give the back
+    // button and scrubber room to sit clear of the display cutout/gesture area, so there's no
+    // need to bring the real system bars back just because the chrome is up.
     var showChrome by remember { mutableStateOf(true) }
-    ImmersiveMode(enabled = !showChrome)
+    ImmersiveMode(enabled = true)
     var isScrubbing by remember { mutableStateOf(false) }
     val showGestureHelp by viewModel.showGestureHelp.collectAsState()
     val readingMode by viewModel.readingMode.collectAsState()
@@ -284,10 +301,12 @@ private fun PagedReader(
             val rawPage = progressIndexFor(units.getOrNull(pagerState.currentPage))
             ReaderChrome(
                 seriesTitle = viewModel.seriesTitle,
-                chapterTitle = viewModel.chapter.displayName,
+                chapter = viewModel.chapter,
                 currentPage = rawPage,
                 pageCount = pageCount,
                 readingMode = readingMode,
+                readingDirectionRtl = readingDirectionRtl,
+                invertTapZones = viewModel.invertTapZones,
                 onReadingModeChange = viewModel::setReadingMode,
                 onBack = onBack,
                 onSeek = { target ->
@@ -471,7 +490,7 @@ private fun ContinuousReader(
         if (showChrome) {
             ReaderChrome(
                 seriesTitle = viewModel.seriesTitle,
-                chapterTitle = viewModel.chapter.displayName,
+                chapter = viewModel.chapter,
                 currentPage = listState.firstVisibleItemIndex.coerceIn(0, pageCount - 1),
                 pageCount = pageCount,
                 readingMode = readingMode,
@@ -484,12 +503,17 @@ private fun ContinuousReader(
     }
 }
 
-/** Series/chapter info up top; a scrubbable slider along the bottom for quick page jumps (both
- * toggled by the center tap zone in paged modes, or any tap in continuous mode). */
+/**
+ * "Manga Reader Overlay" (Claude Design, imported 2026-07-07): a dim scrim plus three pieces --
+ * a top bar (back pill + series/chapter title), a dashed-circle hint over each of the paged tap
+ * zones (skipped for continuous/webtoon, which has no zone concept), and a bottom bar with a
+ * reading-direction segmented control above a big-number page scrubber. Toggled by the center tap
+ * zone in paged modes, or any tap in continuous mode -- same trigger as before, new look.
+ */
 @Composable
 private fun BoxScope.ReaderChrome(
     seriesTitle: String,
-    chapterTitle: String,
+    chapter: ChapterCard,
     currentPage: Int,
     pageCount: Int,
     readingMode: ReadingMode,
@@ -497,90 +521,253 @@ private fun BoxScope.ReaderChrome(
     onBack: () -> Unit,
     onSeek: (Int) -> Unit,
     onScrubbingChanged: (Boolean) -> Unit,
+    readingDirectionRtl: Boolean = false,
+    invertTapZones: Boolean = false,
 ) {
+    val archivo = mangaArchivo()
+    val anton = mangaAnton()
+
+    // Dim scrim so the overlay's text and controls stay legible over whatever's on the page
+    // underneath, matching the design's `rgba(5,5,5,.42)` wash.
+    Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.42f)))
+
+    when (readingMode) {
+        ReadingMode.VERTICAL_CONTINUOUS -> ScrollToReadHint(archivo, Modifier.align(Alignment.BottomCenter).padding(bottom = 200.dp))
+        ReadingMode.VERTICAL_PAGED -> VerticalTapZoneHints(invertTapZones, archivo, Modifier.align(Alignment.Center).fillMaxHeight(0.62f))
+        else -> HorizontalTapZoneHints(readingDirectionRtl, invertTapZones, archivo, Modifier.align(Alignment.Center).fillMaxWidth(0.82f))
+    }
+
     Row(
-        Modifier.align(Alignment.TopStart).fillMaxWidth().background(Color.Black.copy(alpha = 0.6f))
+        Modifier.align(Alignment.TopStart).fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent)))
             .windowInsetsPadding(WindowInsets.statusBars)
-            // Matches TopAppBar's own built-in 4.dp start inset before its navigation icon
-            // (SeriesScreen/SettingsScreen), so the back arrow sits at the same horizontal
-            // position whether the bar behind it is a real TopAppBar or this custom overlay.
-            .padding(start = 4.dp, end = 12.dp)
-            // Material3's TopAppBar has a fixed 64.dp container height with its navigation
-            // icon centered inside; without this, this Row shrinks to its content (~48.dp,
-            // set by the IconButton's touch target), so the icon centers ~8.dp higher than
-            // on TopAppBar-based screens. Matching the height matches the icon's position.
-            .heightIn(min = 64.dp),
+            .padding(horizontal = 24.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        IconButton(onClick = onBack) { BackIcon(tint = Color.White) }
+        Box(
+            Modifier.size(40.dp).clip(CircleShape).background(Color.White.copy(alpha = 0.08f)).clickable(onClick = onBack),
+            contentAlignment = Alignment.Center,
+        ) { BackIcon(tint = Color.White, modifier = Modifier.size(18.dp)) }
         Column(Modifier.weight(1f)) {
             if (seriesTitle.isNotBlank()) {
-                Text(seriesTitle, color = Color.White, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    seriesTitle.uppercase(), color = MangaColors.Accent, fontFamily = archivo, fontWeight = FontWeight.ExtraBold,
+                    fontSize = 10.sp, letterSpacing = 2.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
             }
-            Text(chapterTitle, color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-        ReadingModeSwitcher(current = readingMode, onSelect = onReadingModeChange)
-    }
-    Column(
-        Modifier.align(Alignment.BottomCenter).fillMaxWidth().background(Color.Black.copy(alpha = 0.6f))
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 8.dp, vertical = 0.dp),
-    ) {
-        var dragValue by remember { mutableStateOf<Float?>(null) }
-        if (pageCount > 1) {
-            Slider(
-                value = dragValue ?: currentPage.toFloat(),
-                onValueChange = {
-                    dragValue = it
-                    onScrubbingChanged(true)
-                },
-                onValueChangeFinished = {
-                    dragValue?.let { onSeek(it.roundToInt().coerceIn(0, pageCount - 1)) }
-                    dragValue = null
-                    onScrubbingChanged(false)
-                },
-                valueRange = 0f..(pageCount - 1).toFloat(),
-                // One discrete stop per page, rather than a free-scrubbing continuous drag.
-                steps = (pageCount - 2).coerceAtLeast(0),
-                colors = SliderDefaults.colors(
-                    thumbColor = Color.White,
-                    activeTrackColor = Color.White,
-                    inactiveTrackColor = Color.White.copy(alpha = 0.3f),
-                ),
-                modifier = Modifier.fillMaxWidth(),
+            Text(
+                chapterHeaderLabel(chapter), color = Color.White, fontFamily = anton, fontSize = 20.sp, lineHeight = 20.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp),
             )
         }
-        Text(
-            "${currentPage + 1} / $pageCount",
-            color = Color.White,
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(bottom = 6.dp),
+    }
+
+    Column(
+        Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.92f))))
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(horizontal = 20.dp).padding(top = 34.dp, bottom = 14.dp),
+    ) {
+        ReadingModeSegments(
+            current = readingMode, onSelect = onReadingModeChange, archivo = archivo,
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 18.dp),
         )
+
+        var dragValue by remember { mutableStateOf<Float?>(null) }
+        if (pageCount > 1) {
+            val displayPage = (dragValue?.roundToInt() ?: currentPage) + 1
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Text(
+                    displayPage.toString().padStart(2, '0'), color = Color.White, fontFamily = anton, fontSize = 17.sp,
+                    textAlign = TextAlign.Center, modifier = Modifier.width(34.dp),
+                )
+                Slider(
+                    value = dragValue ?: currentPage.toFloat(),
+                    onValueChange = {
+                        dragValue = it
+                        onScrubbingChanged(true)
+                    },
+                    onValueChangeFinished = {
+                        dragValue?.let { onSeek(it.roundToInt().coerceIn(0, pageCount - 1)) }
+                        dragValue = null
+                        onScrubbingChanged(false)
+                    },
+                    valueRange = 0f..(pageCount - 1).toFloat(),
+                    // One discrete stop per page, rather than a free-scrubbing continuous drag.
+                    steps = (pageCount - 2).coerceAtLeast(0),
+                    colors = SliderDefaults.colors(
+                        thumbColor = MangaColors.Accent,
+                        activeTrackColor = MangaColors.Accent,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.16f),
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    pageCount.toString(), color = Color.White.copy(alpha = 0.4f), fontFamily = anton, fontSize = 17.sp,
+                    textAlign = TextAlign.Center, modifier = Modifier.width(34.dp),
+                )
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(
+                directionHint(readingMode, readingDirectionRtl).uppercase(), color = Color.White.copy(alpha = 0.4f),
+                fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 10.sp, letterSpacing = 1.sp,
+            )
+            Text(
+                "Page ${currentPage + 1} of $pageCount".uppercase(), color = MangaColors.Accent,
+                fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp,
+            )
+        }
     }
 }
 
-/** Quick-switcher on the reader's chrome: shows the active mode, opens a dropdown of the other
- * three on tap. Lets the mode change while looking at the pages, without a trip to Settings —
- * [onSelect] is wired to [ReaderViewModel.setReadingMode], which persists per series. */
+/** Reading-direction segmented pill (replaces the old dropdown quick-switcher) -- every
+ * [ReadingMode], not just the design's three, so the paged-vs-continuous vertical distinction
+ * stays reachable without a trip to Settings. [onSelect] is wired to
+ * [ReaderViewModel.setReadingMode], which persists per series. */
 @Composable
-private fun ReadingModeSwitcher(current: ReadingMode, onSelect: (ReadingMode) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        TextButton(onClick = { expanded = true }) {
-            Text(current.shortLabel(), color = Color.White, style = MaterialTheme.typography.labelLarge)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            ReadingMode.entries.forEach { mode ->
-                DropdownMenuItem(
-                    text = { Text(mode.label()) },
-                    onClick = {
-                        onSelect(mode)
-                        expanded = false
-                    },
+private fun ReadingModeSegments(current: ReadingMode, onSelect: (ReadingMode) -> Unit, archivo: FontFamily, modifier: Modifier = Modifier) {
+    Row(
+        modifier.clip(RoundedCornerShape(13.dp)).background(Color.White.copy(alpha = 0.07f))
+            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(13.dp)).padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        ReadingMode.entries.forEach { mode ->
+            val active = mode == current
+            Row(
+                Modifier.clip(RoundedCornerShape(10.dp)).background(if (active) MangaColors.Accent else Color.Transparent)
+                    .clickable { onSelect(mode) }.padding(horizontal = 14.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    mode.shortLabel(), color = if (active) Color.White else Color.White.copy(alpha = 0.55f),
+                    fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 12.sp,
                 )
             }
         }
     }
+}
+
+/** The three paged tap zones (PLAN.md §8.1) made visible while the chrome is shown -- a dashed
+ * circle + chevron + label over each third, colored to match [computeTapZone]'s actual
+ * forward/backward assignment (not a fixed left/right convention) so the hint is never a lie
+ * about which side of the screen does what. */
+@Composable
+private fun HorizontalTapZoneHints(isRtl: Boolean, invertTapZones: Boolean, archivo: FontFamily, modifier: Modifier = Modifier) {
+    val firstIsForward = isRtl xor invertTapZones
+    Row(modifier, horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        TapZoneHint(forward = firstIsForward, isMenu = false, arrow = if (firstIsForward) HintArrow.RIGHT else HintArrow.LEFT, archivo = archivo)
+        TapZoneHint(forward = false, isMenu = true, arrow = null, archivo = archivo)
+        TapZoneHint(forward = !firstIsForward, isMenu = false, arrow = if (firstIsForward) HintArrow.LEFT else HintArrow.RIGHT, archivo = archivo)
+    }
+}
+
+/** [HorizontalTapZoneHints]' counterpart for VERTICAL_PAGED, whose real zones are top/middle/
+ * bottom thirds ([computeTapZone] reads `pos.y`, not `pos.x`, when `isVertical`) -- stacked
+ * vertically instead of copying the design's left/center/right layout, since that would hint at
+ * a geometry the actual gesture doesn't use. */
+@Composable
+private fun VerticalTapZoneHints(invertTapZones: Boolean, archivo: FontFamily, modifier: Modifier = Modifier) {
+    val firstIsForward = invertTapZones
+    Column(modifier, verticalArrangement = Arrangement.SpaceBetween, horizontalAlignment = Alignment.CenterHorizontally) {
+        TapZoneHint(forward = firstIsForward, isMenu = false, arrow = if (firstIsForward) HintArrow.DOWN else HintArrow.UP, archivo = archivo)
+        TapZoneHint(forward = false, isMenu = true, arrow = null, archivo = archivo)
+        TapZoneHint(forward = !firstIsForward, isMenu = false, arrow = if (firstIsForward) HintArrow.UP else HintArrow.DOWN, archivo = archivo)
+    }
+}
+
+private enum class HintArrow { LEFT, RIGHT, UP, DOWN }
+
+@Composable
+private fun TapZoneHint(forward: Boolean, isMenu: Boolean, arrow: HintArrow?, archivo: FontFamily) {
+    val tint = if (forward) MangaColors.Accent else Color.White.copy(alpha = if (isMenu) 0.5f else 0.62f)
+    val label = if (isMenu) "Toggle Menu" else if (forward) "Next Page" else "Previous"
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Box(
+            Modifier.size(58.dp).dashedBorder(tint.copy(alpha = if (forward) 0.7f else 0.4f), cornerRadius = if (isMenu) 16.dp else null),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isMenu) HamburgerGlyph(tint) else ChevronGlyph(requireNotNull(arrow), tint)
+        }
+        Text(
+            label.uppercase(), color = tint, fontFamily = archivo, fontWeight = FontWeight.ExtraBold,
+            fontSize = 10.sp, letterSpacing = 2.sp,
+        )
+    }
+}
+
+@Composable
+private fun ChevronGlyph(direction: HintArrow, tint: Color) {
+    val rotation = when (direction) {
+        HintArrow.RIGHT -> 0f
+        HintArrow.DOWN -> 90f
+        HintArrow.LEFT -> 180f
+        HintArrow.UP -> 270f
+    }
+    Canvas(Modifier.size(22.dp).graphicsLayer(rotationZ = rotation)) {
+        val path = Path().apply {
+            moveTo(size.width * 0.32f, size.height * 0.18f)
+            lineTo(size.width * 0.74f, size.height * 0.5f)
+            lineTo(size.width * 0.32f, size.height * 0.82f)
+        }
+        drawPath(path, color = tint, style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
+@Composable
+private fun HamburgerGlyph(tint: Color) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        repeat(3) { Box(Modifier.width(20.dp).height(2.dp).background(tint)) }
+    }
+}
+
+@Composable
+private fun ScrollToReadHint(archivo: FontFamily, modifier: Modifier = Modifier) {
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        ChevronGlyph(HintArrow.DOWN, Color.White.copy(alpha = 0.55f))
+        Text(
+            "Scroll to read".uppercase(), color = Color.White.copy(alpha = 0.55f), fontFamily = archivo,
+            fontWeight = FontWeight.Bold, fontSize = 9.sp, letterSpacing = 2.sp,
+        )
+    }
+}
+
+/** A dashed outline (Compose's [Modifier.border] is solid-only) -- a circle for the paged tap
+ * zones, or a rounded rect (pass [cornerRadius]) for the menu zone, matching the design. */
+private fun Modifier.dashedBorder(color: Color, cornerRadius: Dp?, strokeWidth: Dp = 1.5.dp): Modifier = drawWithContent {
+    drawContent()
+    val stroke = Stroke(width = strokeWidth.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
+    if (cornerRadius != null) {
+        drawRoundRect(color = color, style = stroke, cornerRadius = CornerRadius(cornerRadius.toPx()))
+    } else {
+        drawCircle(color = color, radius = size.minDimension / 2f, style = stroke)
+    }
+}
+
+/** "Tap right-side zones to advance" etc, under the scrubber -- phrased around the *actual*
+ * forward zone rather than a fixed side, same reasoning as [HorizontalTapZoneHints]. */
+private fun directionHint(readingMode: ReadingMode, readingDirectionRtl: Boolean): String = when (readingMode) {
+    ReadingMode.VERTICAL_CONTINUOUS -> "Swipe or scroll vertically to advance"
+    ReadingMode.VERTICAL_PAGED -> "Swipe vertically to advance"
+    else -> if (readingDirectionRtl) "Tap side zones to advance · manga order" else "Tap side zones to advance"
+}
+
+/** "CH. 13 · A Name in the Sand", falling back to "VOL. N" when there's no parsed chapter number
+ * (PLAN.md §5, §17) and to the plain filename when there's neither -- same cascade as
+ * [MangaDetailScreen]'s `chapterOrdinal`, just inlined here since that helper is file-private. */
+private fun chapterHeaderLabel(chapter: ChapterCard): String {
+    val prefix = when {
+        chapter.number != null -> "CH. ${formatReaderChapterNumber(chapter.number)}"
+        chapter.volume != null -> "VOL. ${formatReaderChapterNumber(chapter.volume)}"
+        else -> null
+    }
+    return if (prefix != null) "$prefix · ${chapter.displayName}" else chapter.displayName
+}
+
+private fun formatReaderChapterNumber(number: Double?): String {
+    if (number == null) return "?"
+    return if (number == number.toLong().toDouble()) number.toLong().toString() else number.toString()
 }
 
 /** Shown when swiping past the last page of the chapter, sliding in with the pager's own
