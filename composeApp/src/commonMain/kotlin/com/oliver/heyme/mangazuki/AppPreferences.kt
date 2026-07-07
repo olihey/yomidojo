@@ -19,6 +19,12 @@ enum class TitleLanguage { FILE, ANILIST_ROMAJI, ANILIST_ENGLISH, ANILIST_NATIVE
  * checked that also has a real banner image. */
 enum class MetadataProviderChoice { ANILIST, KITSU }
 
+/** Which of the Library screen's two tabs (`MangaShelfGrid`'s `LibraryTab`) to land on at cold
+ * start. Only seeds the tab's initial `rememberSaveable` value -- once the app is running, a
+ * manual switch away from this default sticks for the rest of the session/back-stack lifetime
+ * regardless of this setting (PLAN.md). */
+enum class StartScreen { LIBRARY, YOUR_PAGE }
+
 /**
  * App-wide display preferences. [themeMode]/[titleLanguage] are `StateFlow`s, not plain
  * settings-backed properties like the other preferences classes — `App()` wraps the whole nav host
@@ -49,6 +55,18 @@ class AppPreferences(private val settings: Settings) {
     fun setTitleLanguage(language: TitleLanguage) {
         _titleLanguage.value = language
         settings.putString(KEY_TITLE_LANGUAGE, language.name)
+    }
+
+    private val _startScreen = MutableStateFlow(
+        settings.getStringOrNull(KEY_START_SCREEN)
+            ?.let { runCatching { StartScreen.valueOf(it) }.getOrNull() }
+            ?: StartScreen.LIBRARY,
+    )
+    val startScreen: StateFlow<StartScreen> = _startScreen
+
+    fun setStartScreen(screen: StartScreen) {
+        _startScreen.value = screen
+        settings.putString(KEY_START_SCREEN, screen.name)
     }
 
     private val _metadataProvider = MutableStateFlow(
@@ -138,6 +156,7 @@ class AppPreferences(private val settings: Settings) {
     private companion object {
         const val KEY_THEME_MODE = "app.themeMode"
         const val KEY_TITLE_LANGUAGE = "app.titleLanguage"
+        const val KEY_START_SCREEN = "app.startScreen"
         const val KEY_METADATA_PROVIDER = "app.metadataProvider"
         const val KEY_DEVICE_ID = "app.deviceId"
         const val KEY_SYNC_ENABLED = "app.syncEnabled"

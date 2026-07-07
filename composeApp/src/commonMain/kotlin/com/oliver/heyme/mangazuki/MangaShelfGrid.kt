@@ -106,6 +106,10 @@ fun MangaShelfGrid(
     resumeChapters: Map<String, ChapterCard>,
     recentChapters: List<RecentChapterCard>,
     titleLanguage: TitleLanguage,
+    /** One-time seed for [activeTab]'s initial value (Settings' "Start screen", PLAN.md) -- not
+     * meant to be observed reactively, since changing the setting mid-session shouldn't yank the
+     * user off whichever tab they're already on. */
+    startScreen: StartScreen = StartScreen.LIBRARY,
     /** Opens the "Local folder vs. SMB share" chooser (PLAN.md §6) -- NOT the raw SAF picker
      * directly. Both the re-grant banner and the "no source" empty state need the same choice
      * a fresh setup does, not just a folder re-pick, since the previously-configured source
@@ -118,7 +122,8 @@ fun MangaShelfGrid(
 ) {
     val archivo = mangaArchivo()
     val anton = mangaAnton()
-    var activeTab by rememberSaveable(stateSaver = LibraryTabSaver) { mutableStateOf(LibraryTab.LIBRARY) }
+    val initialTab = if (startScreen == StartScreen.YOUR_PAGE) LibraryTab.YOUR_PAGE else LibraryTab.LIBRARY
+    var activeTab by rememberSaveable(stateSaver = LibraryTabSaver) { mutableStateOf(initialTab) }
 
     Column(Modifier.fillMaxSize().background(MangaColors.Bg)) {
         ShelfMasthead(progress, enrichProgress, canRescan, onRescan = viewModel::rescan, onSettingsClick, activeTab, onTabChange = { activeTab = it }, archivo, anton)

@@ -62,6 +62,7 @@ fun LibraryScreen(
     onChapterClick: (seriesId: String, chapterId: String) -> Unit,
     onSettingsClick: () -> Unit,
     titleLanguage: TitleLanguage,
+    startScreen: StartScreen = StartScreen.LIBRARY,
 ) {
     // The redesigned dark full-bleed look (PLAN.md, "Manga Library Tablet" Claude Design) is
     // meant to run edge-to-edge -- otherwise the system status/nav bars sit on top of it as
@@ -118,6 +119,7 @@ fun LibraryScreen(
             resumeChapters = resumeChapters,
             recentChapters = recentChapters,
             titleLanguage = titleLanguage,
+            startScreen = startScreen,
             onAddSource = openChooser,
             onSeriesClick = onSeriesClick,
             onChapterClick = onChapterClick,

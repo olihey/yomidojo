@@ -35,6 +35,10 @@ fun App(graph: AppGraph, onPickFolder: () -> Unit, onSignIn: () -> Unit = {}, on
                     onChapterClick = { seriesId, chapterId -> navController.navigate("reader/$seriesId/$chapterId") },
                     onSettingsClick = { navController.navigate("settings") },
                     titleLanguage = titleLanguage,
+                    // A one-time seed for the Library/Your Page tab's rememberSaveable initial
+                    // value (PLAN.md), not observed reactively -- changing this setting mid-session
+                    // shouldn't yank the user off whichever tab they're already on.
+                    startScreen = graph.appPreferences.startScreen.value,
                 )
             }
             composable("settings") {

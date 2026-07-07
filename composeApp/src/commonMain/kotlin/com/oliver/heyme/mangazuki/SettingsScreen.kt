@@ -51,6 +51,11 @@ fun TitleLanguage.label(): String = when (this) {
     TitleLanguage.ANILIST_NATIVE -> "Native"
 }
 
+fun StartScreen.label(): String = when (this) {
+    StartScreen.LIBRARY -> "Library"
+    StartScreen.YOUR_PAGE -> "Your Page"
+}
+
 fun MetadataProviderChoice.label(): String = when (this) {
     MetadataProviderChoice.ANILIST -> "AniList"
     MetadataProviderChoice.KITSU -> "Kitsu"
@@ -99,6 +104,7 @@ fun SettingsScreen(
     val coroutineScope = rememberCoroutineScope()
     val themeMode by appPreferences.themeMode.collectAsState()
     val titleLanguage by appPreferences.titleLanguage.collectAsState()
+    val startScreen by appPreferences.startScreen.collectAsState()
     val metadataProvider by appPreferences.metadataProvider.collectAsState()
     val syncEnabled by appPreferences.syncEnabled.collectAsState()
     val lastSyncedAt by appPreferences.lastSyncedAt.collectAsState()
@@ -160,6 +166,33 @@ fun SettingsScreen(
                 ) {
                     RadioButton(selected = language == titleLanguage, onClick = { appPreferences.setTitleLanguage(language) })
                     Text(language.label())
+                }
+            }
+
+            HorizontalDivider(Modifier.padding(vertical = 12.dp))
+
+            Text(
+                "Start screen",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp),
+            )
+            Text(
+                "Which Library tab to open on -- switching manually still sticks for the rest " +
+                    "of the session.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            StartScreen.entries.forEach { screen ->
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable { appPreferences.setStartScreen(screen) }
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    RadioButton(selected = screen == startScreen, onClick = { appPreferences.setStartScreen(screen) })
+                    Text(screen.label())
                 }
             }
 
