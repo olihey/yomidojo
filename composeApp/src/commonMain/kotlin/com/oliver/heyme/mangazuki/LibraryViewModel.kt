@@ -18,7 +18,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-data class ScanProgress(val seriesFound: Int, val chaptersFound: Int)
+/** [directoriesScanned] ticks up on every folder the scanner lists, well before any series is
+ * fully processed (which is what [seriesFound]/[chaptersFound] wait on) -- a big first series can
+ * otherwise leave the UI showing "0 series, 0 chapters" for a long time despite real progress
+ * happening (PLAN.md §5). */
+data class ScanProgress(val seriesFound: Int, val chaptersFound: Int, val directoriesScanned: Int = 0)
 
 /** How many series [LibraryViewModel.inProgress] prefetches a resume chapter for -- "Your Page"
  * dashboard's "Jump back in" section only ever shows this many. */
@@ -282,7 +286,7 @@ class LibraryViewModel(
             // Cancels a still-running enrichment pass before waiting on libraryWriteMutex --
             // wherever it was started from, even a completely different coroutine scope like
             // ScanWorker's own background pass (PLAN.md §9.2, 2026-07-06). See LibrarySyncer.sync.
-            syncer.sync(rootLocator) { s, c -> _progress.value = ScanProgress(s, c) }
+            syncer.sync(rootLocator) { progress -> _progress.value = progress }
         } finally {
             _progress.value = null
         }

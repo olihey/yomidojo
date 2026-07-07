@@ -21,20 +21,30 @@ class LibrarySyncer(
     private val repository: LibraryRepository,
     private val scanner: LibraryScanner,
 ) {
-    /** Runs a full scan of [rootLocator]. [onProgress] is (seriesFound, chaptersFound).
-     * Serialized via [libraryWriteMutex] — see its doc for why overlapping scans are unsafe.
-     * Cancels a still-running [MetadataEnricher.enrichPending] pass first (PLAN.md §9.2,
-     * 2026-07-06), wherever it was started from, rather than queue up behind it for however long
-     * AniList's rate-limited queue takes to drain -- that cancel has to happen *before* attempting
-     * to acquire the mutex below, since the enrichment pass is what's holding it. */
-    suspend fun sync(rootLocator: String, onProgress: (Int, Int) -> Unit = { _, _ -> }) {
+    /** Runs a full scan of [rootLocator]. Serialized via [libraryWriteMutex] — see its doc for
+     * why overlapping scans are unsafe. Cancels a still-running [MetadataEnricher.enrichPending]
+     * pass first (PLAN.md §9.2, 2026-07-06), wherever it was started from, rather than queue up
+     * behind it for however long AniList's rate-limited queue takes to drain -- that cancel has
+     * to happen *before* attempting to acquire the mutex below, since the enrichment pass is
+     * what's holding it. */
+    suspend fun sync(rootLocator: String, onProgress: (ScanProgress) -> Unit = {}) {
         currentEnrichmentJob.value?.cancel()
         libraryWriteMutex.withLock {
             val scanAt = nowEpochMillis()
             val previousCount = repository.seriesCount()
             var series = 0
             var chapters = 0
-            scanner.scan(rootLocator, scanAt, RepositoryChapterSkipCache(repository)).collect { scanned ->
+            var directories = 0
+            scanner.scan(
+                rootLocator, scanAt, RepositoryChapterSkipCache(repository),
+                // A directory-granularity ping (PLAN.md §5) -- a big first series can otherwise
+                // leave onProgress below silent, and the UI stuck at "0 series, 0 chapters", for
+                // however long that one series alone takes to fully list and process.
+                onDirectoryListed = {
+                    directories++
+                    onProgress(ScanProgress(series, chapters, directories))
+                },
+            ).collect { scanned ->
                 // Only a brand-new series gets the ComicInfo.xml naming pass -- an already-known
                 // series (even one being rescanned right now) keeps whatever title it has, so this
                 // can never flip-flop on a later scan.
@@ -42,7 +52,7 @@ class LibrarySyncer(
                 repository.persistSeries(toPersist.series, toPersist.chapters)
                 series++
                 chapters += toPersist.chapters.size
-                onProgress(series, chapters)
+                onProgress(ScanProgress(series, chapters, directories))
             }
             // Only after a successful, complete scan — prune removed series/chapters. But a scan
             // that comes back with far fewer series than the library already has is more likely an

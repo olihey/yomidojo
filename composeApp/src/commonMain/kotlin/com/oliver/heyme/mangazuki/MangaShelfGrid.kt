@@ -51,6 +51,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -166,18 +167,29 @@ private fun ShelfMasthead(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        when {
-            progress != null -> ShelfProgressLabel("Scanning… ${progress.seriesFound} series, ${progress.chaptersFound} chapters", archivo)
-            enrichProgress != null -> ShelfProgressLabel("Fetching metadata… ${enrichProgress.done} / ${enrichProgress.total}", archivo)
-            else -> Column {
-                Text(
-                    "MANGAZUKI", color = MangaColors.Accent, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
-                    fontSize = 10.sp, letterSpacing = 3.sp,
+        // The title block (two lines, ~34.sp headline) and the scan/enrich progress label (one
+        // shorter line) don't naturally take the same height -- swapping between them under a
+        // plain `when` made this row (and everything below it, Library's grid or Your Page's
+        // sections alike) visibly jump up and down every time a background scan started or
+        // finished. Always composing the title block here too, invisibly, pins this Box to its
+        // height regardless of which branch is actually showing; a Box reports the max size of
+        // all its children even when one of them is alpha-0'd out.
+        Box(contentAlignment = Alignment.CenterStart) {
+            MastheadTitleBlock(activeTab, onTabChange = {}, archivo, anton, modifier = Modifier.alpha(0f))
+            when {
+                progress != null -> ShelfProgressLabel(
+                    "Scanning",
+                    // A big first series can take a while to fully list/process -- show
+                    // directories checked in the meantime rather than sitting on "0 series, 0
+                    // chapters" with no visible movement (PLAN.md §5).
+                    if (progress.seriesFound > 0) "${progress.seriesFound} series · ${progress.chaptersFound} chapters"
+                    else "${progress.directoriesScanned} folders checked",
+                    archivo, anton,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 4.dp)) {
-                    MastheadTab("LIBRARY", active = activeTab == LibraryTab.LIBRARY, onClick = { onTabChange(LibraryTab.LIBRARY) }, anton)
-                    MastheadTab("YOUR PAGE", active = activeTab == LibraryTab.YOUR_PAGE, onClick = { onTabChange(LibraryTab.YOUR_PAGE) }, anton)
-                }
+                enrichProgress != null -> ShelfProgressLabel(
+                    "Fetching metadata", "${enrichProgress.done} / ${enrichProgress.total}", archivo, anton,
+                )
+                else -> MastheadTitleBlock(activeTab, onTabChange, archivo, anton)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -190,6 +202,20 @@ private fun ShelfMasthead(
 }
 
 @Composable
+private fun MastheadTitleBlock(activeTab: LibraryTab, onTabChange: (LibraryTab) -> Unit, archivo: FontFamily, anton: FontFamily, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(
+            "MANGAZUKI", color = MangaColors.Accent, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
+            fontSize = 10.sp, letterSpacing = 3.sp,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 4.dp)) {
+            MastheadTab("LIBRARY", active = activeTab == LibraryTab.LIBRARY, onClick = { onTabChange(LibraryTab.LIBRARY) }, anton)
+            MastheadTab("YOUR PAGE", active = activeTab == LibraryTab.YOUR_PAGE, onClick = { onTabChange(LibraryTab.YOUR_PAGE) }, anton)
+        }
+    }
+}
+
+@Composable
 private fun MastheadTab(label: String, active: Boolean, onClick: () -> Unit, anton: FontFamily) {
     Text(
         label, color = if (active) MangaColors.Text else MangaColors.TextMuted, fontFamily = anton,
@@ -197,11 +223,24 @@ private fun MastheadTab(label: String, active: Boolean, onClick: () -> Unit, ant
     )
 }
 
+/** Mirrors [MastheadTitleBlock]'s own shape (a small accent caption over a big headline-weight
+ * line) rather than the single small line it used to be -- both larger and, since it now matches
+ * the title block's structure, no longer the odd one out size-wise while a scan or enrichment
+ * pass is running. */
 @Composable
-private fun ShelfProgressLabel(text: String, archivo: FontFamily) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        CircularProgressIndicator(Modifier.size(20.dp), color = MangaColors.Accent, strokeWidth = 2.dp)
-        Text(text, color = MangaColors.Text, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+private fun ShelfProgressLabel(label: String, detail: String, archivo: FontFamily, anton: FontFamily) {
+    Column {
+        Text(
+            label.uppercase(), color = MangaColors.Accent, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
+            fontSize = 10.sp, letterSpacing = 3.sp,
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(top = 4.dp),
+        ) {
+            CircularProgressIndicator(Modifier.size(26.dp), color = MangaColors.Accent, strokeWidth = 3.dp)
+            Text(detail, color = MangaColors.Text, fontFamily = anton, fontSize = 26.sp, lineHeight = 26.sp)
+        }
     }
 }
 

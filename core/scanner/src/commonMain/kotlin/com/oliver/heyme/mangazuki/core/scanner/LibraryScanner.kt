@@ -32,14 +32,25 @@ data class ScannedSeries(val series: Series, val chapters: List<Chapter>)
  */
 class LibraryScanner(private val source: MangaSource) {
 
-    fun scan(rootLocator: String, now: Long, skipCache: ChapterSkipCache = NoOpChapterSkipCache): Flow<ScannedSeries> = flow {
+    /** [onDirectoryListed] fires after every [MangaSource.list] call (the root, each series
+     * folder, and each image-folder chapter not already skip-cached) -- a directory-granularity
+     * progress ping for callers, since [ScannedSeries] itself only ever emits once a whole series
+     * folder has finished processing, which can be a long wait on a big library (PLAN.md §5). */
+    fun scan(
+        rootLocator: String,
+        now: Long,
+        skipCache: ChapterSkipCache = NoOpChapterSkipCache,
+        onDirectoryListed: () -> Unit = {},
+    ): Flow<ScannedSeries> = flow {
         val rootEntries = source.list(rootLocator).filterNot { it.name.startsWith(".") }
+        onDirectoryListed()
 
         // Skip hidden folders (e.g. Resilio's ".sync", ".thumbnails").
         for (dir in rootEntries.filter { it.isDirectory }) {
             val seriesId = deterministicId(source.id, dir.locator)
 
             val children = source.list(dir.locator)
+            onDirectoryListed()
             val chapterEntries = children.filter { it.isDirectory || it.name.isCbz() }
             val directImages = children.count { !it.isDirectory && it.name.isImage() }
 
@@ -51,7 +62,11 @@ class LibraryScanner(private val source: MangaSource) {
                     if (entry.isDirectory) {
                         val chapterId = deterministicId(source.id, entry.locator)
                         val cached = skipCache.lookup(chapterId)?.takeIf { it.changeToken == entry.changeToken }
-                        val pages = cached?.pageCount ?: source.list(entry.locator).count { it.name.isImage() }
+                        val pages = cached?.pageCount ?: run {
+                            val images = source.list(entry.locator)
+                            onDirectoryListed()
+                            images.count { it.name.isImage() }
+                        }
                         // A subfolder with no images isn't a chapter (e.g. an "Archive" folder).
                         if (pages == 0) null else imageDirChapter(seriesId, entry, entry.name, pages, now)
                     } else {
