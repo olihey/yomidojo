@@ -82,14 +82,14 @@ private val LibraryTabSaver = Saver<LibraryTab, String>(save = { it.name }, rest
 /**
  * The "Manga Library Tablet" design (Claude Design, imported 2026-07-06) applied to normal
  * library browsing, plus the "Manga Welcome Tablet" design ([YourPageContent], imported
- * 2026-07-07) behind the YOUR PAGE tab -- entering selection mode (long-press, bulk mark
- * read/unread) falls back to the old Material grid, since that's a secondary, infrequent tool
- * neither design covers. `LibraryScreen` renders this instead of its own `Scaffold` whenever
- * `!selectionMode`.
+ * 2026-07-07) behind the YOUR PAGE tab. Selection mode (long-press, bulk mark read/unread) is
+ * layered onto this same screen rather than falling back to a different, plain-Material one --
+ * only the masthead's right-hand actions and each cover's own checkbox change; the grid itself
+ * never swaps out from under the user.
  *
  * Uses real cover art via the existing [AsyncImage]/[MangaCover] pipeline, unlike the design's
  * mocked flat-gradient placeholders -- those are reused here only for the loading/no-cover
- * fallback state, the same role [CoverPlaceholder]'s letter tile already played.
+ * fallback state.
  */
 @Composable
 fun MangaShelfGrid(
@@ -111,15 +111,25 @@ fun MangaShelfGrid(
      * meant to be observed reactively, since changing the setting mid-session shouldn't yank the
      * user off whichever tab they're already on. */
     startScreen: StartScreen = StartScreen.LIBRARY,
+    selectionMode: Boolean,
+    selectedIds: Set<String>,
     /** Opens the "Local folder vs. SMB share" chooser (PLAN.md §6) -- NOT the raw SAF picker
      * directly. Both the re-grant banner and the "no source" empty state need the same choice
      * a fresh setup does, not just a folder re-pick, since the previously-configured source
      * could equally have been an SMB share. */
     onAddSource: () -> Unit,
+    /** Pre-composed by the caller: toggles selection when [selectionMode] is on, navigates
+     * otherwise -- this composable only needs to know the resulting boolean/set, not re-derive
+     * click semantics itself. */
     onSeriesClick: (String) -> Unit,
     onChapterClick: (seriesId: String, chapterId: String) -> Unit,
     onSettingsClick: () -> Unit,
     onLongClickSeries: (String) -> Unit,
+    onSelectAll: () -> Unit,
+    onSelectNone: () -> Unit,
+    onMarkRead: () -> Unit,
+    onMarkUnread: () -> Unit,
+    onExitSelectionMode: () -> Unit,
 ) {
     val archivo = mangaArchivo()
     val anton = mangaAnton()
@@ -127,7 +137,10 @@ fun MangaShelfGrid(
     var activeTab by rememberSaveable(stateSaver = LibraryTabSaver) { mutableStateOf(initialTab) }
 
     Column(Modifier.fillMaxSize().background(MangaColors.Bg)) {
-        ShelfMasthead(progress, enrichProgress, canRescan, onRescan = viewModel::rescan, onSettingsClick, activeTab, onTabChange = { activeTab = it }, archivo, anton)
+        ShelfMasthead(
+            progress, enrichProgress, canRescan, onRescan = viewModel::rescan, onSettingsClick, activeTab, onTabChange = { activeTab = it },
+            selectionMode, selectedIds.size, onSelectAll, onSelectNone, onMarkRead, onMarkUnread, onExitSelectionMode, archivo, anton,
+        )
         if (activeTab == LibraryTab.YOUR_PAGE) {
             YourPageContent(inProgress, resumeChapters, recentChapters, titleLanguage, onSeriesClick, onChapterClick)
         } else {
@@ -141,9 +154,11 @@ fun MangaShelfGrid(
                 cards.isEmpty() && progress == null && query.isBlank() && !needsReGrant ->
                     ShelfEmptyState("No series found in this library yet.", archivo)
                 else -> {
+                    // Always rendered, even in selection mode -- hiding it used to shift every
+                    // cover up by its height the instant a long-press entered selection mode.
                     ShelfToolbar(viewModel, query, sort, ascending, filter, archivo)
                     ShelfHeaderRow(filter, cards.size, archivo, anton)
-                    ShelfGrid(cards, titleLanguage, onSeriesClick, onLongClickSeries, archivo, anton)
+                    ShelfGrid(cards, titleLanguage, selectionMode, selectedIds, onSeriesClick, onLongClickSeries, archivo, anton)
                 }
             }
         }
@@ -159,6 +174,13 @@ private fun ShelfMasthead(
     onSettingsClick: () -> Unit,
     activeTab: LibraryTab,
     onTabChange: (LibraryTab) -> Unit,
+    selectionMode: Boolean,
+    selectedCount: Int,
+    onSelectAll: () -> Unit,
+    onSelectNone: () -> Unit,
+    onMarkRead: () -> Unit,
+    onMarkUnread: () -> Unit,
+    onExitSelectionMode: () -> Unit,
     archivo: FontFamily,
     anton: FontFamily,
 ) {
@@ -167,16 +189,23 @@ private fun ShelfMasthead(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The title block (two lines, ~34.sp headline) and the scan/enrich progress label (one
-        // shorter line) don't naturally take the same height -- swapping between them under a
-        // plain `when` made this row (and everything below it, Library's grid or Your Page's
-        // sections alike) visibly jump up and down every time a background scan started or
-        // finished. Always composing the title block here too, invisibly, pins this Box to its
-        // height regardless of which branch is actually showing; a Box reports the max size of
-        // all its children even when one of them is alpha-0'd out.
+        // The title block (two lines, ~34.sp headline) and the scan/enrich/selection labels (one
+        // shorter line each) don't naturally take the same height -- swapping between them under
+        // a plain `when` made this row (and everything below it, Library's grid or Your Page's
+        // sections alike) visibly jump up and down every time a background scan started/finished
+        // or selection mode was entered/exited. Always composing the title block here too,
+        // invisibly, pins this Box to its height regardless of which branch is actually showing;
+        // a Box reports the max size of all its children even when one of them is alpha-0'd out.
         Box(contentAlignment = Alignment.CenterStart) {
             MastheadTitleBlock(activeTab, onTabChange = {}, archivo, anton, modifier = Modifier.alpha(0f))
             when {
+                // Selection mode wins over an in-flight scan/enrich pass, which can legitimately
+                // keep running quietly in the background while the user is selecting -- there's
+                // nothing useful to show for both at once, and the selection is the thing the
+                // user is actively doing right now.
+                selectionMode -> ShelfProgressLabel(
+                    "Selected", "$selectedCount " + if (selectedCount == 1) "title" else "titles", archivo, anton,
+                )
                 progress != null -> ShelfProgressLabel(
                     "Scanning",
                     // A big first series can take a while to fully list/process -- show
@@ -193,10 +222,23 @@ private fun ShelfMasthead(
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (canRescan && progress == null) {
-                ShelfIconButton(onClick = onRescan, icon = Icons.Default.Refresh, background = MangaColors.Panel, tint = MangaColors.TextDim, border = MangaColors.PanelBorder)
+            if (selectionMode) {
+                ShelfPillButton(onClick = onSelectAll) { Text("All", color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+                ShelfPillButton(onClick = onSelectNone) { Text("None", color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+                ShelfPillButton(onClick = onMarkRead) { Text("Read", color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+                ShelfPillButton(onClick = onMarkUnread) { Text("Unread", color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+                Row(
+                    Modifier.clip(RoundedCornerShape(12.dp)).background(MangaColors.Accent)
+                        .clickable(onClick = onExitSelectionMode).padding(horizontal = 16.dp, vertical = 11.dp),
+                ) {
+                    Text("Done", color = Color.White, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            } else {
+                if (canRescan && progress == null) {
+                    ShelfIconButton(onClick = onRescan, icon = Icons.Default.Refresh, background = MangaColors.Panel, tint = MangaColors.TextDim, border = MangaColors.PanelBorder)
+                }
+                ShelfIconButton(onClick = onSettingsClick, icon = Icons.Default.Settings, background = MangaColors.Accent, tint = Color.White)
             }
-            ShelfIconButton(onClick = onSettingsClick, icon = Icons.Default.Settings, background = MangaColors.Accent, tint = Color.White)
         }
     }
 }
@@ -405,6 +447,8 @@ private fun ShelfHeaderRow(filter: LibraryFilter, count: Int, archivo: FontFamil
 private fun ShelfGrid(
     cards: List<LibraryCard>,
     titleLanguage: TitleLanguage,
+    selectionMode: Boolean,
+    selectedIds: Set<String>,
     onClick: (String) -> Unit,
     onLongClick: (String) -> Unit,
     archivo: FontFamily,
@@ -417,7 +461,9 @@ private fun ShelfGrid(
         horizontalArrangement = Arrangement.spacedBy(18.dp),
         verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
-        gridItems(cards, key = { it.id }) { c -> ShelfCard(c, titleLanguage, onClick, onLongClick, archivo, anton) }
+        gridItems(cards, key = { it.id }) { c ->
+            ShelfCard(c, titleLanguage, selectionMode, c.id in selectedIds, onClick, onLongClick, archivo, anton)
+        }
     }
 }
 
@@ -426,6 +472,8 @@ private fun ShelfGrid(
 private fun ShelfCard(
     c: LibraryCard,
     titleLanguage: TitleLanguage,
+    selectionMode: Boolean,
+    selected: Boolean,
     onClick: (String) -> Unit,
     onLongClick: (String) -> Unit,
     archivo: FontFamily,
@@ -437,12 +485,20 @@ private fun ShelfCard(
     val isContinuing = c.unreadCount in 1 until c.chapterCount
 
     Column(Modifier.combinedClickable(onClick = { onClick(c.id) }, onLongClick = { onLongClick(c.id) })) {
-        Box(Modifier.fillMaxWidth().aspectRatio(0.75f).clip(RoundedCornerShape(10.dp))) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(0.75f).clip(RoundedCornerShape(10.dp))
+                .let { if (selected) it.border(2.dp, MangaColors.Accent, RoundedCornerShape(10.dp)) else it },
+        ) {
             ShelfCoverImage(title, c.coverModel, c.id, c.externalId, Modifier.matchParentSize())
             Box(
                 Modifier.matchParentSize()
                     .background(Brush.verticalGradient(0.42f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.72f))),
             )
+            // Dims unselected covers while picking, same role a checkbox-only treatment would
+            // play, but readable at a glance across a whole grid rather than per-corner.
+            if (selectionMode && !selected) {
+                Box(Modifier.matchParentSize().background(MangaColors.Bg.copy(alpha = 0.55f)))
+            }
             if (isContinuing) {
                 Text(
                     "CONTINUE", color = Color.White, fontFamily = archivo, fontWeight = FontWeight.ExtraBold,
@@ -454,12 +510,16 @@ private fun ShelfCard(
                         .padding(horizontal = 34.dp, vertical = 3.dp),
                 )
             }
-            Text(
-                "$readCount/${c.chapterCount}", color = Color.White, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 10.sp,
-                modifier = Modifier.align(Alignment.TopEnd).padding(9.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 3.dp),
-            )
+            if (selectionMode) {
+                ShelfSelectionBadge(selected, Modifier.align(Alignment.TopEnd).padding(9.dp))
+            } else {
+                Text(
+                    "$readCount/${c.chapterCount}", color = Color.White, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 10.sp,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(9.dp)
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                )
+            }
             MetadataStatusOverlay(c, Modifier.align(Alignment.BottomEnd).padding(bottom = 10.dp, end = 6.dp), size = 18.dp)
             Text(
                 title, color = Color.White, fontFamily = anton, fontSize = 16.sp, lineHeight = 16.sp,
@@ -477,6 +537,21 @@ private fun ShelfCard(
             )
             Text("$percent%", color = MangaColors.Accent, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 10.sp)
         }
+    }
+}
+
+/** Selection-mode's stand-in for the read/total badge (same top-end corner) -- a filled accent
+ * disc with a checkmark when selected, an outlined one otherwise, so the state reads at a glance
+ * without needing the [selectionMode] dim treatment on the cover to also do that job. */
+@Composable
+private fun ShelfSelectionBadge(selected: Boolean, modifier: Modifier = Modifier) {
+    Box(
+        modifier.size(24.dp).clip(CircleShape)
+            .background(if (selected) MangaColors.Accent else Color.Black.copy(alpha = 0.45f))
+            .border(1.5.dp, if (selected) MangaColors.Accent else Color.White.copy(alpha = 0.7f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (selected) Icon(Icons.Default.Check, contentDescription = "Selected", tint = Color.White, modifier = Modifier.size(14.dp))
     }
 }
 
