@@ -46,6 +46,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,8 +69,14 @@ import com.oliver.heyme.mangazuki.core.data.RecentChapterCard
 
 /** The masthead's headline doubles as a two-way tab switcher -- local-only UI state, not
  * persisted or known to [LibraryViewModel], since [YourPageContent] derives everything it shows
- * straight from the view model's own flows and needs nothing tab-specific remembered. */
+ * straight from the view model's own flows and needs nothing tab-specific remembered. Still
+ * needs [rememberSaveable] rather than plain `remember`, though: nav-compose tears down and
+ * rebuilds the "library" destination's whole composition on every visit (not just the first),
+ * so a plain `remember` reset back to LIBRARY every time the user returned from a chapter
+ * opened via "Resume"/"Fresh chapters" on this tab. */
 private enum class LibraryTab { LIBRARY, YOUR_PAGE }
+
+private val LibraryTabSaver = Saver<LibraryTab, String>(save = { it.name }, restore = { LibraryTab.valueOf(it) })
 
 /**
  * The "Manga Library Tablet" design (Claude Design, imported 2026-07-06) applied to normal
@@ -110,7 +118,7 @@ fun MangaShelfGrid(
 ) {
     val archivo = mangaArchivo()
     val anton = mangaAnton()
-    var activeTab by remember { mutableStateOf(LibraryTab.LIBRARY) }
+    var activeTab by rememberSaveable(stateSaver = LibraryTabSaver) { mutableStateOf(LibraryTab.LIBRARY) }
 
     Column(Modifier.fillMaxSize().background(MangaColors.Bg)) {
         ShelfMasthead(progress, enrichProgress, canRescan, onRescan = viewModel::rescan, onSettingsClick, activeTab, onTabChange = { activeTab = it }, archivo, anton)
