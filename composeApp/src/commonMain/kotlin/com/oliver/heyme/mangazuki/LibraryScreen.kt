@@ -66,6 +66,12 @@ fun LibraryScreen(
     onSettingsClick: () -> Unit,
     titleLanguage: TitleLanguage,
 ) {
+    // The redesigned dark full-bleed look (PLAN.md, "Manga Library Tablet" Claude Design) is
+    // meant to run edge-to-edge -- otherwise the system status/nav bars sit on top of it as
+    // opaque overlays instead of the transparent scrim the design assumes. Bars stay reachable
+    // via a swipe (ImmersiveMode.android.kt), same behavior as the Reader.
+    ImmersiveMode(enabled = true)
+
     val progress by viewModel.progress.collectAsState()
     val enrichProgress by viewModel.enrichProgress.collectAsState()
     val canRescan by viewModel.canRescan.collectAsState()

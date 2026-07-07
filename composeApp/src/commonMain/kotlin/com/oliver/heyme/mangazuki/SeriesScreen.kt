@@ -66,6 +66,10 @@ fun SeriesScreen(
     onChapterClick: (String) -> Unit,
     titleLanguage: TitleLanguage,
 ) {
+    // Same edge-to-edge reasoning as LibraryScreen -- the redesigned dark hero/banner is meant
+    // to run under the system bars, not behind an opaque one.
+    ImmersiveMode(enabled = true)
+
     val series by viewModel.series.collectAsState()
     val chapters by viewModel.chapters.collectAsState()
     val selectionMode by viewModel.selectionMode.collectAsState()

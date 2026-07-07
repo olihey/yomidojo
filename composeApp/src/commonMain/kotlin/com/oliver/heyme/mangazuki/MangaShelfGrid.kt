@@ -141,7 +141,7 @@ private fun ShelfMasthead(
             enrichProgress != null -> ShelfProgressLabel("Fetching metadata… ${enrichProgress.done} / ${enrichProgress.total}", archivo)
             else -> Column {
                 Text(
-                    "YOUR SHELF", color = MangaColors.Accent, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
+                    "MANGAZUKI", color = MangaColors.Accent, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
                     fontSize = 10.sp, letterSpacing = 3.sp,
                 )
                 Text("LIBRARY", color = MangaColors.Text, fontFamily = anton, fontSize = 34.sp, lineHeight = 34.sp, modifier = Modifier.padding(top = 4.dp))
