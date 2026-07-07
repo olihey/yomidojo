@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -173,7 +172,7 @@ private fun DetailHero(
             MetadataAttributionLabel(series.metadataProvider, Modifier.align(Alignment.BottomEnd).padding(8.dp))
         }
 
-        Row(Modifier.fillMaxWidth().offset(y = (-78).dp)) {
+        Row(Modifier.fillMaxWidth().overlapAbove(78.dp)) {
             Column(Modifier.width(160.dp)) {
                 Box(Modifier.fillMaxWidth().aspectRatio(0.75f).clip(RoundedCornerShape(11.dp))) {
                     ShelfCoverImage(title, series.coverPath, series.id, series.externalId, Modifier.matchParentSize())
@@ -370,6 +369,20 @@ private fun chapterOrdinal(chapter: ChapterCard, indexInList: Int): Pair<String,
 private fun formatChapterNumber(number: Double?): String {
     if (number == null) return "?"
     return if (number == number.toLong().toDouble()) number.toLong().toString() else number.toString()
+}
+
+/** Shifts this Row up to overlap the banner (the cover callout is meant to sit partly on top of
+ * it) while reporting less height to the parent Column by the same amount -- otherwise, since
+ * `Modifier.offset` shifts drawing only and doesn't shrink the reported layout size, the Column
+ * would still reserve the un-shifted (taller) space below it, leaving a large dead gap before
+ * [ChaptersHeader]. Same technique as [SeriesScreen]'s own `overlapAbove`, duplicated here since
+ * that one is file-private. */
+private fun Modifier.overlapAbove(overlap: Dp): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val overlapPx = overlap.roundToPx().coerceIn(0, placeable.height)
+    layout(placeable.width, placeable.height - overlapPx) {
+        placeable.placeRelative(0, -overlapPx)
+    }
 }
 
 /** Escapes a parent's symmetric horizontal inset (here, the hero grid item's 32dp
