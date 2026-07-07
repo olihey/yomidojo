@@ -77,6 +77,24 @@ fun SeriesScreen(
         FixMetadataDialog(viewModel, titleLanguage)
     }
 
+    // The redesigned "Manga Detail" look (Claude Design, imported 2026-07-06) only covers normal
+    // browsing -- selection mode (long-press, bulk mark read/unread) falls back to the plain
+    // Material grid below, same scoping call as the Library screen's Grid redesign.
+    if (!selectionMode) {
+        series?.let { s ->
+            MangaDetailScreen(
+                series = s,
+                chapters = chapters,
+                titleLanguage = titleLanguage,
+                onBack = onBack,
+                onChapterClick = onChapterClick,
+                onFixMetadata = viewModel::openMetadataSearch,
+                onLongClickChapter = viewModel::enterSelectionMode,
+            )
+        }
+        return
+    }
+
     Scaffold(
         topBar = {
             if (selectionMode) {

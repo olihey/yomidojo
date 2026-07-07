@@ -39,7 +39,7 @@ fun StatusRow(status: String?, startYear: Int?, modifier: Modifier = Modifier) {
 
 /** AniList `MediaStatus` -> (display label, color). Null for an unmatched series or a status
  * value AniList hasn't documented (future-proofing rather than crashing on an unknown enum). */
-private fun statusPresentation(status: String?): Pair<String, Color>? = when (status) {
+internal fun statusPresentation(status: String?): Pair<String, Color>? = when (status) {
     "FINISHED" -> "Finished" to Color(0xFF4CAF50)
     "RELEASING" -> "Releasing" to Color(0xFF2196F3)
     "NOT_YET_RELEASED" -> "Not yet released" to Color(0xFFFF9800)
@@ -52,7 +52,7 @@ private fun statusPresentation(status: String?): Pair<String, Color>? = when (st
  * [StatusRow]. AniList's `MediaFormat` enum doesn't distinguish manhwa/manhua from manga
  * (`KitsuMetadataProvider.normalizeFormat` folds both into `MANGA`, PLAN.md §9.3), so only these
  * three values ever actually occur; null for an unmatched series or an unrecognized value. */
-private fun formatPresentation(format: String?): Pair<String, Color>? = when (format) {
+internal fun formatPresentation(format: String?): Pair<String, Color>? = when (format) {
     "MANGA" -> "Manga" to Color(0xFF64B5F6)
     "NOVEL" -> "Novel" to Color(0xFFBA68C8)
     "ONE_SHOT" -> "One-shot" to Color(0xFFFFB74D)

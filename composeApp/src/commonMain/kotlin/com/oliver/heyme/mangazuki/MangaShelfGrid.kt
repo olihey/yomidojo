@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,7 +20,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
@@ -64,40 +62,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.oliver.heyme.mangazuki.core.data.LibraryCard
-import manga_reader.composeapp.generated.resources.Res
-import manga_reader.composeapp.generated.resources.anton_regular
-import manga_reader.composeapp.generated.resources.archivo_black
-import manga_reader.composeapp.generated.resources.archivo_bold
-import manga_reader.composeapp.generated.resources.archivo_extrabold
-import manga_reader.composeapp.generated.resources.archivo_medium
-import manga_reader.composeapp.generated.resources.archivo_regular
-import manga_reader.composeapp.generated.resources.archivo_semibold
-import org.jetbrains.compose.resources.Font
-
-// Palette lifted directly from the "Manga Library Tablet" Claude Design project (imported
-// 2026-07-06) -- a dark, pulp/comic-poster look: near-black background, a red-orange accent,
-// bold condensed display type for titles.
-private val ShelfBg = Color(0xFF0E0D0C)
-private val ShelfPanel = Color(0xFF1A1817)
-private val ShelfPanelBorder = Color(0xFF2A2725)
-private val ShelfAccent = Color(0xFFEF4023)
-private val ShelfText = Color.White
-private val ShelfTextDim = Color(0xFFCFCAC4)
-private val ShelfTextMuted = Color(0xFF6B6763)
-private val ShelfTextMuted2 = Color(0xFF7D7873)
-
-@Composable
-private fun shelfArchivo(): FontFamily = FontFamily(
-    Font(Res.font.archivo_regular, FontWeight.Normal),
-    Font(Res.font.archivo_medium, FontWeight.Medium),
-    Font(Res.font.archivo_semibold, FontWeight.SemiBold),
-    Font(Res.font.archivo_bold, FontWeight.Bold),
-    Font(Res.font.archivo_extrabold, FontWeight.ExtraBold),
-    Font(Res.font.archivo_black, FontWeight.Black),
-)
-
-@Composable
-private fun shelfAnton(): FontFamily = FontFamily(Font(Res.font.anton_regular, FontWeight.Normal))
 
 /**
  * The "Manga Library Tablet" design (Claude Design, imported 2026-07-06) applied to the
@@ -134,15 +98,15 @@ fun MangaShelfGrid(
     onSettingsClick: () -> Unit,
     onLongClickSeries: (String) -> Unit,
 ) {
-    val archivo = shelfArchivo()
-    val anton = shelfAnton()
+    val archivo = mangaArchivo()
+    val anton = mangaAnton()
 
-    Column(Modifier.fillMaxSize().background(ShelfBg)) {
+    Column(Modifier.fillMaxSize().background(MangaColors.Bg)) {
         ShelfMasthead(progress, enrichProgress, canRescan, onRescan = viewModel::rescan, onSettingsClick, archivo, anton)
         if (needsReGrant) ShelfReGrantBanner(onAddSource, archivo)
         when {
             !canRescan && !needsReGrant -> ShelfEmptyState("No library source configured yet.", archivo) {
-                Button(onClick = onAddSource, colors = ButtonDefaults.buttonColors(containerColor = ShelfAccent)) {
+                Button(onClick = onAddSource, colors = ButtonDefaults.buttonColors(containerColor = MangaColors.Accent)) {
                     Text("+ Add source", fontFamily = archivo, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             }
@@ -177,17 +141,17 @@ private fun ShelfMasthead(
             enrichProgress != null -> ShelfProgressLabel("Fetching metadata… ${enrichProgress.done} / ${enrichProgress.total}", archivo)
             else -> Column {
                 Text(
-                    "YOUR SHELF", color = ShelfAccent, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
+                    "YOUR SHELF", color = MangaColors.Accent, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
                     fontSize = 10.sp, letterSpacing = 3.sp,
                 )
-                Text("LIBRARY", color = ShelfText, fontFamily = anton, fontSize = 34.sp, lineHeight = 34.sp, modifier = Modifier.padding(top = 4.dp))
+                Text("LIBRARY", color = MangaColors.Text, fontFamily = anton, fontSize = 34.sp, lineHeight = 34.sp, modifier = Modifier.padding(top = 4.dp))
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             if (canRescan && progress == null) {
-                ShelfIconButton(onClick = onRescan, icon = Icons.Default.Refresh, background = ShelfPanel, tint = ShelfTextDim, border = ShelfPanelBorder)
+                ShelfIconButton(onClick = onRescan, icon = Icons.Default.Refresh, background = MangaColors.Panel, tint = MangaColors.TextDim, border = MangaColors.PanelBorder)
             }
-            ShelfIconButton(onClick = onSettingsClick, icon = Icons.Default.Settings, background = ShelfAccent, tint = Color.White)
+            ShelfIconButton(onClick = onSettingsClick, icon = Icons.Default.Settings, background = MangaColors.Accent, tint = Color.White)
         }
     }
 }
@@ -195,13 +159,13 @@ private fun ShelfMasthead(
 @Composable
 private fun ShelfProgressLabel(text: String, archivo: FontFamily) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        CircularProgressIndicator(Modifier.size(20.dp), color = ShelfAccent, strokeWidth = 2.dp)
-        Text(text, color = ShelfText, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        CircularProgressIndicator(Modifier.size(20.dp), color = MangaColors.Accent, strokeWidth = 2.dp)
+        Text(text, color = MangaColors.Text, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
     }
 }
 
 @Composable
-private fun ShelfIconButton(onClick: () -> Unit, icon: androidx.compose.ui.graphics.vector.ImageVector, background: Color, tint: Color, border: Color? = null) {
+internal fun ShelfIconButton(onClick: () -> Unit, icon: androidx.compose.ui.graphics.vector.ImageVector, background: Color, tint: Color, border: Color? = null) {
     Box(
         Modifier.size(44.dp).clip(CircleShape).background(background)
             .let { if (border != null) it.border(1.dp, border, CircleShape) else it }
@@ -215,15 +179,15 @@ private fun ShelfIconButton(onClick: () -> Unit, icon: androidx.compose.ui.graph
 @Composable
 private fun ShelfReGrantBanner(onReconnect: () -> Unit, archivo: FontFamily) {
     Row(
-        Modifier.fillMaxWidth().background(ShelfAccent.copy(alpha = 0.16f)).padding(horizontal = 24.dp, vertical = 12.dp),
+        Modifier.fillMaxWidth().background(MangaColors.Accent.copy(alpha = 0.16f)).padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
             "Source access was lost. Re-grant to keep your library updated.",
-            color = ShelfText, fontFamily = archivo, fontSize = 13.sp, modifier = Modifier.weight(1f),
+            color = MangaColors.Text, fontFamily = archivo, fontSize = 13.sp, modifier = Modifier.weight(1f),
         )
-        Button(onClick = onReconnect, colors = ButtonDefaults.buttonColors(containerColor = ShelfAccent)) {
+        Button(onClick = onReconnect, colors = ButtonDefaults.buttonColors(containerColor = MangaColors.Accent)) {
             Text("Re-grant", fontFamily = archivo, fontWeight = FontWeight.Bold, color = Color.White)
         }
     }
@@ -234,7 +198,7 @@ private fun ShelfEmptyState(text: String, archivo: FontFamily, action: (@Composa
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text, color = ShelfTextMuted, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
+                text, color = MangaColors.TextMuted, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp, modifier = Modifier.padding(bottom = 16.dp),
             )
             action?.invoke()
@@ -259,69 +223,69 @@ private fun ShelfToolbar(
     ) {
         Row(
             Modifier.weight(1f).widthIn(max = 380.dp)
-                .clip(RoundedCornerShape(13.dp)).background(ShelfPanel).border(1.dp, ShelfPanelBorder, RoundedCornerShape(13.dp))
+                .clip(RoundedCornerShape(13.dp)).background(MangaColors.Panel).border(1.dp, MangaColors.PanelBorder, RoundedCornerShape(13.dp))
                 .padding(horizontal = 14.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Icon(Icons.Default.Search, contentDescription = null, tint = ShelfTextMuted, modifier = Modifier.size(18.dp))
+            Icon(Icons.Default.Search, contentDescription = null, tint = MangaColors.TextMuted, modifier = Modifier.size(18.dp))
             Box(Modifier.weight(1f)) {
                 if (query.isEmpty()) {
-                    Text("Search titles, authors…", color = ShelfTextMuted, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Text("Search titles, authors…", color = MangaColors.TextMuted, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                 }
                 BasicTextField(
                     value = query,
                     onValueChange = { viewModel.query.value = it },
                     singleLine = true,
-                    textStyle = LocalTextStyle.current.copy(color = ShelfText, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 15.sp),
-                    cursorBrush = SolidColor(ShelfAccent),
+                    textStyle = LocalTextStyle.current.copy(color = MangaColors.Text, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 15.sp),
+                    cursorBrush = SolidColor(MangaColors.Accent),
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
             if (query.isNotEmpty()) {
                 Icon(
-                    Icons.Default.Close, contentDescription = "Clear search", tint = ShelfTextMuted,
+                    Icons.Default.Close, contentDescription = "Clear search", tint = MangaColors.TextMuted,
                     modifier = Modifier.size(16.dp).clickable { viewModel.query.value = "" },
                 )
             }
         }
         var sortOpen by remember { mutableStateOf(false) }
         Box {
-            ShelfPillButton(onClick = { sortOpen = true }, archivo = archivo) {
-                Text("Sort · ${sort.label}", color = ShelfTextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            ShelfPillButton(onClick = { sortOpen = true }) {
+                Text("Sort · ${sort.label}", color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             }
             DropdownMenu(expanded = sortOpen, onDismissRequest = { sortOpen = false }) {
                 SortMode.entries.forEach { mode ->
                     DropdownMenuItem(
                         text = {
                             Text(
-                                mode.label, color = if (mode == sort) ShelfText else ShelfTextDim, fontFamily = archivo,
+                                mode.label, color = if (mode == sort) MangaColors.Text else MangaColors.TextDim, fontFamily = archivo,
                                 fontWeight = if (mode == sort) FontWeight.Bold else FontWeight.Medium,
                             )
                         },
                         onClick = { viewModel.sort.value = mode; sortOpen = false },
-                        trailingIcon = { if (mode == sort) Icon(Icons.Default.Check, contentDescription = null, tint = ShelfAccent) },
+                        trailingIcon = { if (mode == sort) Icon(Icons.Default.Check, contentDescription = null, tint = MangaColors.Accent) },
                     )
                 }
             }
         }
-        ShelfPillButton(onClick = viewModel::toggleDirection, archivo = archivo) {
+        ShelfPillButton(onClick = viewModel::toggleDirection) {
             Icon(
                 if (ascending) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = if (ascending) "Ascending" else "Descending", tint = ShelfTextDim, modifier = Modifier.size(16.dp),
+                contentDescription = if (ascending) "Ascending" else "Descending", tint = MangaColors.TextDim, modifier = Modifier.size(16.dp),
             )
         }
         var filterOpen by remember { mutableStateOf(false) }
         Box {
-            ShelfPillButton(onClick = { filterOpen = true }, archivo = archivo) {
-                Text(filter.label, color = ShelfTextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            ShelfPillButton(onClick = { filterOpen = true }) {
+                Text(filter.label, color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             }
             DropdownMenu(expanded = filterOpen, onDismissRequest = { filterOpen = false }) {
                 LibraryFilter.entries.forEach { option ->
                     DropdownMenuItem(
                         text = {
                             Text(
-                                option.label, color = if (option == filter) ShelfText else ShelfTextDim, fontFamily = archivo,
+                                option.label, color = if (option == filter) MangaColors.Text else MangaColors.TextDim, fontFamily = archivo,
                                 fontWeight = if (option == filter) FontWeight.Bold else FontWeight.Medium,
                             )
                         },
@@ -330,19 +294,19 @@ private fun ShelfToolbar(
                 }
             }
         }
-        ShelfPillButton(onClick = viewModel::cycleViewMode, archivo = archivo) {
+        ShelfPillButton(onClick = viewModel::cycleViewMode) {
             Text(
                 viewMode.name.lowercase().replaceFirstChar { it.uppercase() },
-                color = ShelfTextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
+                color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
             )
         }
     }
 }
 
 @Composable
-private fun ShelfPillButton(onClick: () -> Unit, archivo: FontFamily, content: @Composable RowScope.() -> Unit) {
+internal fun ShelfPillButton(onClick: () -> Unit, content: @Composable RowScope.() -> Unit) {
     Row(
-        Modifier.clip(RoundedCornerShape(12.dp)).background(ShelfPanel).border(1.dp, ShelfPanelBorder, RoundedCornerShape(12.dp))
+        Modifier.clip(RoundedCornerShape(12.dp)).background(MangaColors.Panel).border(1.dp, MangaColors.PanelBorder, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
@@ -356,10 +320,10 @@ private fun ShelfHeaderRow(filter: LibraryFilter, count: Int, archivo: FontFamil
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom,
     ) {
-        Text(filter.label, color = ShelfText, fontFamily = anton, fontSize = 22.sp)
+        Text(filter.label, color = MangaColors.Text, fontFamily = anton, fontSize = 22.sp)
         Text(
             "$count " + if (count == 1) "TITLE" else "TITLES",
-            color = ShelfTextMuted, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 2.sp,
+            color = MangaColors.TextMuted, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 2.sp,
         )
     }
 }
@@ -413,7 +377,7 @@ private fun ShelfCard(
                     modifier = Modifier.align(Alignment.TopStart)
                         .offset(x = (-30).dp, y = 10.dp)
                         .graphicsLayer(rotationZ = -45f)
-                        .background(ShelfAccent)
+                        .background(MangaColors.Accent)
                         .padding(horizontal = 34.dp, vertical = 3.dp),
                 )
             }
@@ -430,15 +394,15 @@ private fun ShelfCard(
                 modifier = Modifier.align(Alignment.BottomStart).padding(start = 11.dp, end = 30.dp, bottom = 15.dp),
             )
             Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(5.dp).background(Color.White.copy(alpha = 0.18f))) {
-                Box(Modifier.fillMaxHeight().fillMaxWidth(percent / 100f).background(ShelfAccent))
+                Box(Modifier.fillMaxHeight().fillMaxWidth(percent / 100f).background(MangaColors.Accent))
             }
         }
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(
-                c.author?.uppercase() ?: "", color = ShelfTextMuted2, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
+                c.author?.uppercase() ?: "", color = MangaColors.TextMuted2, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
                 fontSize = 10.sp, letterSpacing = 0.6.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
             )
-            Text("$percent%", color = ShelfAccent, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 10.sp)
+            Text("$percent%", color = MangaColors.Accent, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 10.sp)
         }
     }
 }
@@ -448,8 +412,8 @@ private fun ShelfCard(
  * only visible while the real cover is loading or missing, same role [CoverPlaceholder]'s
  * letter tile plays for the other view modes. */
 @Composable
-private fun ShelfCoverImage(title: String, model: String?, seriesId: String?, externalId: String?, modifier: Modifier) {
-    val (c1, c2) = remember(seriesId ?: title) { shelfGradientFor(seriesId ?: title) }
+internal fun ShelfCoverImage(title: String, model: String?, seriesId: String?, externalId: String?, modifier: Modifier) {
+    val (c1, c2) = remember(seriesId ?: title) { mangaGradientFor(seriesId ?: title) }
     Box(modifier.background(Brush.linearGradient(listOf(c1, c2))), contentAlignment = Alignment.Center) {
         if (model == null) {
             Text(title.trim().take(1).uppercase(), color = Color.White.copy(alpha = 0.85f), fontSize = 32.sp, fontWeight = FontWeight.Black)
@@ -464,17 +428,3 @@ private fun ShelfCoverImage(title: String, model: String?, seriesId: String?, ex
         }
     }
 }
-
-private val ShelfGradientPalette = listOf(
-    Color(0xFF2E4B4A) to Color(0xFF16302F),
-    Color(0xFF3A2E52) to Color(0xFF221A33),
-    Color(0xFF2B2F3A) to Color(0xFF181B23),
-    Color(0xFF4A3A22) to Color(0xFF2C2113),
-    Color(0xFF6B2F2A) to Color(0xFF411916),
-    Color(0xFF23303B) to Color(0xFF141D24),
-    Color(0xFF33323A) to Color(0xFF1E1D23),
-    Color(0xFF4A2733) to Color(0xFF2B141C),
-)
-
-private fun shelfGradientFor(key: String): Pair<Color, Color> =
-    ShelfGradientPalette[(key.hashCode() and 0x7FFFFFFF) % ShelfGradientPalette.size]
