@@ -1,5 +1,8 @@
 package com.oliver.heyme.mangazuki
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -16,12 +19,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,19 +38,20 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -54,6 +60,16 @@ import com.oliver.heyme.mangazuki.core.domain.Series
 import manga_reader.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
+
+/** [DetailBanner]'s fixed height and how far [DetailInfoSection]'s cover callout overlaps up
+ * into its bottom -- shared so the two stay in sync despite being laid out independently now
+ * (a fixed backdrop plus separately-scrolling content instead of one Column). */
+private val BANNER_HEIGHT = 190.dp
+private val BANNER_OVERLAP = 78.dp
+
+/** Vertical room the floating [DetailTopBar] occupies (16dp padding + ~40dp pill/button + 16dp)
+ * -- the docked Chapters header starts below it so the back pill never sits on the header text. */
+private val TOP_BAR_HEIGHT = 72.dp
 
 /**
  * The "Manga Detail Tablet" design (Claude Design, imported 2026-07-06) applied to the Series
@@ -89,12 +105,44 @@ fun MangaDetailScreen(
     val nextUnread = chapters.firstOrNull { !it.completed }
     val readCount = chapters.count { it.completed }
 
+    val gridState = rememberLazyGridState()
+    val density = LocalDensity.current
+    val topBarPx = remember(density) { with(density) { TOP_BAR_HEIGHT.roundToPx() } }
+    val bannerFadePx = remember(density) { with(density) { BANNER_HEIGHT.toPx() } }
+    // Docks when the real in-grid Chapters header row (item index 1, after the info section)
+    // reaches the dock line just under the floating top bar -- NOT the viewport top. The docked
+    // copy then appears exactly where the row already is, making the swap pixel-aligned instead
+    // of the row visibly jumping back down by the top bar's height. Once the row scrolls out of
+    // the visible set entirely, fall back to "anything past the info section = docked".
+    // derivedStateOf so per-frame scrolling only recomposes when the boolean actually flips.
+    val chaptersHeaderDocked by remember {
+        derivedStateOf {
+            val header = gridState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == 1 }
+            if (header != null) header.offset.y <= topBarPx else gridState.firstVisibleItemIndex >= 1
+        }
+    }
+
     Box(Modifier.fillMaxSize().background(MangaColors.Bg)) {
+        // Fixed backdrop -- unlike the rest of the hero (cover, title, description, CTA), this
+        // never scrolls. It fades with scroll instead of vanishing when the header docks: alpha
+        // reaches 0 over the first banner-height of scroll, well before the dock point, which is
+        // also what keeps its bottom strip (attribution label included) from peeking through the
+        // grid's transparent side margins below the docked header. Read inside graphicsLayer so
+        // per-frame scrolling only redraws the layer, never recomposes.
+        DetailBanner(
+            series,
+            Modifier.align(Alignment.TopStart).graphicsLayer {
+                alpha = if (gridState.firstVisibleItemIndex > 0) 0f
+                else 1f - (gridState.firstVisibleItemScrollOffset / bannerFadePx).coerceIn(0f, 1f)
+            },
+        )
+
         // One grid for the whole screen, not a LazyVerticalGrid nested inside a scrolling
         // Column -- Compose disallows that regardless of userScrollEnabled (a vertically
-        // scrollable measured with unbounded height throws). The hero + chapters-header sit in
-        // a single full-width spanning item ahead of the per-chapter tiles instead.
+        // scrollable measured with unbounded height throws). The scrolling hero info and the
+        // Chapters header sit in full-width spanning items ahead of the per-chapter tiles.
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Adaptive(120.dp),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 32.dp, end = 32.dp, bottom = 32.dp),
@@ -102,14 +150,14 @@ fun MangaDetailScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item(span = { GridItemSpan(maxLineSpan) }) {
-                Column(Modifier.fillMaxWidth()) {
-                    DetailHero(series, title, chapters, readCount, nextUnread, onChapterClick, archivo, anton)
-                    ChaptersHeader(
-                        chapters.size, selectionMode, selectedIds.size,
-                        onSelectAll, onSelectNone, onMarkRead, onMarkUnread, onExitSelectionMode,
-                        archivo, anton,
-                    )
-                }
+                DetailInfoSection(series, title, chapters, readCount, nextUnread, onChapterClick, archivo, anton)
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                ChaptersHeader(
+                    chapters.size, selectionMode, selectedIds.size,
+                    onSelectAll, onSelectNone, onMarkRead, onMarkUnread, onExitSelectionMode,
+                    archivo, anton,
+                )
             }
             gridItemsIndexed(chapters, key = { _, c -> c.id }) { index, c ->
                 ChapterTile(
@@ -117,6 +165,26 @@ fun MangaDetailScreen(
                     selectionMode = selectionMode, selected = c.id in selectedIds,
                     onClick = { onChapterClick(c.id) }, onLongClick = { onLongClickChapter(c.id) }, archivo,
                 )
+            }
+        }
+        // Docked copy of the Chapters header: LazyVerticalGrid has no stickyHeader DSL (that's
+        // LazyColumn-only through foundation 1.8), so "sticky" is this overlay taking over the
+        // moment the real in-grid header row reaches the same spot (see chaptersHeaderDocked).
+        // Its opaque background starts at the very top so chapter tiles visibly scroll under
+        // neither it nor the floating top bar; the header content itself starts below the bar
+        // to keep the back pill off the header text.
+        // Fades rather than popping: the real header row is still scrolling underneath during
+        // the transition, so this reads as a cross-fade from the moving row to the pinned copy
+        // (and back on the way up) instead of the opaque strip snapping into existence.
+        AnimatedVisibility(visible = chaptersHeaderDocked, enter = fadeIn(), exit = fadeOut()) {
+            Box(Modifier.fillMaxWidth().background(MangaColors.Bg).padding(top = TOP_BAR_HEIGHT)) {
+                Box(Modifier.padding(horizontal = 32.dp)) {
+                    ChaptersHeader(
+                        chapters.size, selectionMode, selectedIds.size,
+                        onSelectAll, onSelectNone, onMarkRead, onMarkUnread, onExitSelectionMode,
+                        archivo, anton,
+                    )
+                }
             }
         }
         DetailTopBar(onBack, onFixMetadata, archivo)
@@ -145,8 +213,40 @@ private fun DetailTopBar(onBack: () -> Unit, onFixMetadata: () -> Unit, archivo:
     }
 }
 
+/** The fixed backdrop behind [DetailInfoSection]'s scrolling content -- a plain top-level element
+ * behind the grid rather than something nested inside its padded content, so it renders
+ * edge-to-edge without needing a negative-padding layout trick. */
 @Composable
-private fun DetailHero(
+private fun DetailBanner(series: Series, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth().height(BANNER_HEIGHT)) {
+        val (b1, b2) = remember(series.id) { mangaGradientFor(series.id) }
+        val bannerPath = series.bannerPath
+        if (bannerPath != null) {
+            AsyncImage(
+                model = MangaCover(bannerPath),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+        } else {
+            Box(Modifier.matchParentSize().background(Brush.linearGradient(listOf(b1, b2))))
+        }
+        Box(
+            Modifier.matchParentSize().background(
+                Brush.verticalGradient(0f to Color.Transparent, 0.55f to MangaColors.Bg.copy(alpha = 0.55f), 1f to MangaColors.Bg),
+            ),
+        )
+        MetadataAttributionLabel(series.metadataProvider, Modifier.align(Alignment.BottomEnd).padding(8.dp))
+    }
+}
+
+/** Cover callout + author/title/description/CTA -- scrolls normally, unlike [DetailBanner]
+ * behind it. A plain [Spacer] leaves the banner's top [BANNER_HEIGHT] - [BANNER_OVERLAP]
+ * uncovered, recreating the old single-Column layout's cover-overlaps-banner look without the
+ * negative-padding `overlapAbove` hack that design needed -- the banner isn't in this layout
+ * at all anymore, it's a fixed element the grid scrolls over. */
+@Composable
+private fun DetailInfoSection(
     series: Series,
     title: String,
     chapters: List<ChapterCard>,
@@ -169,28 +269,9 @@ private fun DetailHero(
     val ctaTarget = nextUnread?.id ?: chapters.firstOrNull()?.id
 
     Column {
-        Box(Modifier.expandHorizontally(32.dp).fillMaxWidth().height(190.dp)) {
-            val (b1, b2) = remember(series.id) { mangaGradientFor(series.id) }
-            val bannerPath = series.bannerPath
-            if (bannerPath != null) {
-                AsyncImage(
-                    model = MangaCover(bannerPath),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.matchParentSize(),
-                )
-            } else {
-                Box(Modifier.matchParentSize().background(Brush.linearGradient(listOf(b1, b2))))
-            }
-            Box(
-                Modifier.matchParentSize().background(
-                    Brush.verticalGradient(0f to Color.Transparent, 0.55f to MangaColors.Bg.copy(alpha = 0.55f), 1f to MangaColors.Bg),
-                ),
-            )
-            MetadataAttributionLabel(series.metadataProvider, Modifier.align(Alignment.BottomEnd).padding(8.dp))
-        }
+        Spacer(Modifier.height(BANNER_HEIGHT - BANNER_OVERLAP))
 
-        Row(Modifier.fillMaxWidth().overlapAbove(78.dp)) {
+        Row(Modifier.fillMaxWidth()) {
             Column(Modifier.width(160.dp)) {
                 Box(Modifier.fillMaxWidth().aspectRatio(0.75f).clip(RoundedCornerShape(11.dp))) {
                     ShelfCoverImage(title, series.coverPath, series.id, series.externalId, Modifier.matchParentSize())
@@ -319,39 +400,43 @@ private fun ChaptersHeader(
     archivo: FontFamily,
     anton: FontFamily,
 ) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 18.dp).padding(bottom = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        if (selectionMode) {
-            Text(
-                pluralStringResource(Res.plurals.selection_chapters_selected, selectedCount, selectedCount),
-                color = MangaColors.Text, fontFamily = anton, fontSize = 24.sp,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                ShelfPillButton(onClick = onSelectAll) { Text(stringResource(Res.string.selection_action_all), color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
-                ShelfPillButton(onClick = onSelectNone) { Text(stringResource(Res.string.selection_action_none), color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
-                ShelfPillButton(onClick = onMarkRead) { Text(stringResource(Res.string.selection_action_read), color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
-                ShelfPillButton(onClick = onMarkUnread) { Text(stringResource(Res.string.selection_action_unread), color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
-                Row(
-                    Modifier.clip(RoundedCornerShape(12.dp)).background(MangaColors.Accent)
-                        .clickable(onClick = onExitSelectionMode).padding(horizontal = 16.dp, vertical = 11.dp),
-                ) {
-                    Text(stringResource(Res.string.selection_action_done), color = Color.White, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+    // A single-root Column (not two sibling layouts) so callers can drop this into a grid item
+    // or the docked overlay directly, without needing their own Column to stack the divider.
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(vertical = 18.dp).padding(bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            if (selectionMode) {
+                Text(
+                    pluralStringResource(Res.plurals.selection_chapters_selected, selectedCount, selectedCount),
+                    color = MangaColors.Text, fontFamily = anton, fontSize = 24.sp,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ShelfPillButton(onClick = onSelectAll) { Text(stringResource(Res.string.selection_action_all), color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+                    ShelfPillButton(onClick = onSelectNone) { Text(stringResource(Res.string.selection_action_none), color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+                    ShelfPillButton(onClick = onMarkRead) { Text(stringResource(Res.string.selection_action_read), color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+                    ShelfPillButton(onClick = onMarkUnread) { Text(stringResource(Res.string.selection_action_unread), color = MangaColors.TextDim, fontFamily = archivo, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+                    Row(
+                        Modifier.clip(RoundedCornerShape(12.dp)).background(MangaColors.Accent)
+                            .clickable(onClick = onExitSelectionMode).padding(horizontal = 16.dp, vertical = 11.dp),
+                    ) {
+                        Text(stringResource(Res.string.selection_action_done), color = Color.White, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
+                }
+            } else {
+                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(Res.string.chapters_header_title), color = MangaColors.Text, fontFamily = anton, fontSize = 24.sp)
+                    Text(
+                        stringResource(Res.string.chapters_header_total, count),
+                        color = MangaColors.TextMuted, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.5.sp,
+                    )
                 }
             }
-        } else {
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(Res.string.chapters_header_title), color = MangaColors.Text, fontFamily = anton, fontSize = 24.sp)
-                Text(
-                    stringResource(Res.string.chapters_header_total, count),
-                    color = MangaColors.TextMuted, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 1.5.sp,
-                )
-            }
         }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(MangaColors.Divider).padding(bottom = 16.dp))
     }
-    Box(Modifier.fillMaxWidth().height(1.dp).background(MangaColors.Divider).padding(bottom = 16.dp))
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -433,35 +518,3 @@ private fun formatChapterNumber(number: Double?): String {
     return if (number == number.toLong().toDouble()) number.toLong().toString() else number.toString()
 }
 
-/** Shifts this Row up to overlap the banner (the cover callout is meant to sit partly on top of
- * it) while reporting less height to the parent Column by the same amount -- otherwise, since
- * `Modifier.offset` shifts drawing only and doesn't shrink the reported layout size, the Column
- * would still reserve the un-shifted (taller) space below it, leaving a large dead gap before
- * [ChaptersHeader]. Same technique as [SeriesScreen]'s own `overlapAbove`, duplicated here since
- * that one is file-private. */
-private fun Modifier.overlapAbove(overlap: Dp): Modifier = layout { measurable, constraints ->
-    val placeable = measurable.measure(constraints)
-    val overlapPx = overlap.roundToPx().coerceIn(0, placeable.height)
-    layout(placeable.width, placeable.height - overlapPx) {
-        placeable.placeRelative(0, -overlapPx)
-    }
-}
-
-/** Escapes a parent's symmetric horizontal inset (here, the hero grid item's 32dp
- * [PaddingValues] from the outer LazyVerticalGrid) so the banner can render edge-to-edge while
- * the rest of the hero content keeps its margin -- the horizontal counterpart to
- * [SeriesScreen]'s own vertical `overlapAbove`, which solves the same "Modifier.padding can't go
- * negative" problem in the other axis. */
-private fun Modifier.expandHorizontally(amount: Dp): Modifier = layout { measurable, constraints ->
-    val amountPx = amount.roundToPx()
-    val expanded = Constraints(
-        minWidth = (constraints.minWidth + amountPx * 2).coerceAtLeast(0),
-        maxWidth = if (constraints.hasBoundedWidth) constraints.maxWidth + amountPx * 2 else constraints.maxWidth,
-        minHeight = constraints.minHeight,
-        maxHeight = constraints.maxHeight,
-    )
-    val placeable = measurable.measure(expanded)
-    layout(placeable.width - amountPx * 2, placeable.height) {
-        placeable.placeRelative(-amountPx, 0)
-    }
-}
