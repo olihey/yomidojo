@@ -174,11 +174,13 @@ GROUP BY s.id;
 selectChaptersForSeries:
 SELECT * FROM chapter WHERE series_id = ? ORDER BY volume ASC, number ASC;
 
--- Most-recently-added chapters across the WHOLE library (the "Your Page" dashboard's "Fresh
--- chapters" feed) -- every other chapter query is scoped to one series_id, so this is the only
--- place the chapter_date_added_idx (declared above) actually gets used. Explicit aliases on every
--- column (rather than `c.*, s.*`) since both tables have an `id` column, which SQLDelight can't
--- disambiguate in the generated row type otherwise.
+-- Most-recently-added, not-yet-read chapters across the WHOLE library (the "Your Page"
+-- dashboard's "Fresh chapters" feed) -- every other chapter query is scoped to one series_id, so
+-- this is the only place the chapter_date_added_idx (declared above) actually gets used. Explicit
+-- aliases on every column (rather than `c.*, s.*`) since both tables have an `id` column, which
+-- SQLDelight can't disambiguate in the generated row type otherwise. Excludes already-read
+-- chapters the same way unreadCountForSeries does, so a chapter drops off this feed the moment
+-- it's marked read rather than lingering until it ages out of the limit.
 selectRecentChapters:
 SELECT
   c.id AS chapter_id,
@@ -196,6 +198,8 @@ SELECT
   c.locator AS locator
 FROM chapter c
 JOIN series s ON s.id = c.series_id
+LEFT JOIN reading_progress p ON p.chapter_id = c.id
+WHERE p.completed IS NULL OR p.completed = 0
 ORDER BY c.date_added DESC
 LIMIT :limit;
 
