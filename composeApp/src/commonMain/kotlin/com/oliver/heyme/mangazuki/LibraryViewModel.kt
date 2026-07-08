@@ -7,6 +7,7 @@ import com.oliver.heyme.mangazuki.core.data.RecentChapterCard
 import com.oliver.heyme.mangazuki.core.domain.normalizeSortTitle
 import com.oliver.heyme.mangazuki.core.scanner.LibraryScanner
 import com.oliver.heyme.mangazuki.core.source.MangaSource
+import com.oliver.heyme.mangazuki.core.source.SourceEntry
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -57,6 +58,8 @@ class LibraryViewModel(
     private val localSource: MangaSource,
     /** Null on platforms without SMB support yet (PLAN.md §6) — [onSmbConnect] no-ops. */
     private val smbSourceFactory: SmbSourceFactory?,
+    /** Null on platforms without OneDrive support yet (PLAN.md §6.3) — same seam pattern. */
+    private val oneDriveSourceFactory: OneDriveSourceFactory? = null,
     private val prefs: LibraryPreferences,
     private val enricher: MetadataEnricher,
     private val appPreferences: AppPreferences,
@@ -155,15 +158,19 @@ class LibraryViewModel(
 
     init {
         scope.launch {
-            // savedLocalRoot() holds a raw SAF root URI for a LOCAL source, or an SmbConfig
-            // blob for an SMB one — resolveScanRoot() picks the right locator to actually
-            // scan/canAccess out of either. Cold start with a saved SMB config rebuilds the
-            // connection before the canAccess check, so re-grant detection runs against the
-            // right backend instead of whatever SafMangaSource MainActivity defaulted to.
+            // savedLocalRoot() holds a raw SAF root URI for a LOCAL source, or an SmbConfig/
+            // OneDriveConfig blob otherwise — resolveScanRoot() picks the right locator to
+            // actually scan/canAccess out of any of them. Cold start with a saved SMB/OneDrive
+            // config rebuilds that backend before the canAccess check, so re-grant detection
+            // runs against the right source instead of whatever SafMangaSource MainActivity
+            // defaulted to.
             val type = repository.savedSourceType()
             val configBlob = repository.savedLocalRoot()
             if (type == "SMB" && configBlob != null) {
                 reconfigureSmbSource(configBlob, smbSourceFactory?.loadPassword() ?: "")
+            }
+            if (type == "ONEDRIVE") {
+                reconfigureOneDriveSource()
             }
             val scanRoot = resolveScanRoot(type, configBlob)
             _canRescan.value = scanRoot != null
@@ -212,15 +219,51 @@ class LibraryViewModel(
         return null
     }
 
+    /** Whether the OneDrive connect dialog can skip its sign-in step (PLAN.md §6.3). */
+    fun isOneDriveSignedIn(): Boolean = oneDriveSourceFactory?.isSignedIn() == true
+
+    /** Candidate source backing one folder-browse session (PLAN.md §6.3) — built lazily on the
+     * first listing, discarded when a browse commits or the app process ends. Deliberately NOT
+     * the live [source]: nothing is persisted or reconfigured until [connectOneDrive]. */
+    private var oneDriveCandidate: MangaSource? = null
+
+    /** One directory level of the signed-in OneDrive, folders only — drives the connect
+     * dialog's folder browser. [Result] rather than throwing so the dialog can show a retry
+     * affordance on network failures without try/catch in composition. */
+    suspend fun listOneDriveFolders(path: String): Result<List<SourceEntry>> {
+        val factory = oneDriveSourceFactory ?: return Result.failure(IllegalStateException("OneDrive isn't supported on this platform"))
+        val candidate = oneDriveCandidate ?: factory.build().also { oneDriveCandidate = it }
+        return runCatching { candidate.list(path).filter { it.isDirectory } }
+    }
+
+    /** Mirrors [connectSmb] for OneDrive (PLAN.md §6.3): validates the chosen root against the
+     * candidate source *before* persisting/reconfiguring anything (belt-and-braces — the user
+     * just browsed there, but the token could have expired mid-browse), then persists, swaps the
+     * live source, and fires the scan without holding the dialog open. */
+    suspend fun connectOneDrive(rootPath: String, displayName: String): String? {
+        val factory = oneDriveSourceFactory ?: return "OneDrive isn't supported on this platform"
+        val candidate = oneDriveCandidate ?: factory.build()
+        if (!candidate.canAccess(rootPath)) return "Couldn't access this folder on OneDrive."
+        repository.saveOneDriveSource(OneDriveConfig(rootPath).toBlob(), displayName)
+        (source as? ConfigurableMangaSource)?.reconfigure(candidate)
+        oneDriveCandidate = null
+        _canRescan.value = true
+        _needsReGrant.value = false
+        scope.launch { runScan(rootPath) }
+        return null
+    }
+
     /** Settings -> Reset library (PLAN.md §7.1): wipes the DB, the cached cover/banner files,
-     * the image loader's own cache, and any saved SMB credentials, then reverts to the local SAF
-     * source — the app ends up back in its pre-first-scan "no source configured" state. */
+     * the image loader's own cache, and any saved SMB/OneDrive credentials, then reverts to the
+     * local SAF source — the app ends up back in its pre-first-scan "no source configured" state. */
     fun resetLibrary() {
         scope.launch {
             repository.resetLibrary()
             clearDirectory(coversDir)
             clearImageCache()
             smbSourceFactory?.clearPassword()
+            oneDriveSourceFactory?.signOut()
+            oneDriveCandidate = null
             (source as? ConfigurableMangaSource)?.reconfigure(localSource)
             _canRescan.value = false
             _needsReGrant.value = false
@@ -239,7 +282,13 @@ class LibraryViewModel(
 
     private fun resolveScanRoot(type: String?, configBlob: String?): String? {
         if (configBlob == null) return null
-        return if (type == "SMB") SmbConfig.fromBlob(configBlob)?.rootPath ?: "" else configBlob
+        return when (type) {
+            "SMB" -> SmbConfig.fromBlob(configBlob)?.rootPath ?: ""
+            // A OneDrive root of "" (the whole drive) is legitimate — the non-null blob is
+            // what distinguishes "configured at the drive root" from "not configured".
+            "ONEDRIVE" -> OneDriveConfig.fromBlob(configBlob).rootPath
+            else -> configBlob
+        }
     }
 
     private fun reconfigureSmbSource(configBlob: String, password: String) {
@@ -248,6 +297,11 @@ class LibraryViewModel(
         (source as? ConfigurableMangaSource)?.reconfigure(
             factory.build(config.host, config.share, config.username, password),
         )
+    }
+
+    private fun reconfigureOneDriveSource() {
+        val factory = oneDriveSourceFactory ?: return
+        (source as? ConfigurableMangaSource)?.reconfigure(factory.build())
     }
 
     fun toggleDirection() { ascending.value = !ascending.value }

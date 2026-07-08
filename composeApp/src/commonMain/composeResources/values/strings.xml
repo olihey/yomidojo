@@ -25,6 +25,7 @@
     <string name="add_source_dialog_title">Add library source</string>
     <string name="add_source_local_folder">Local folder</string>
     <string name="add_source_smb_share">SMB share</string>
+    <string name="add_source_onedrive">OneDrive</string>
 
     <!-- LibraryScreen.kt: SmbConnectDialog -->
     <string name="smb_dialog_title">Connect to SMB share</string>
@@ -34,6 +35,17 @@
     <string name="smb_field_password">Password</string>
     <string name="smb_field_root_path">Folder within share (optional)</string>
     <string name="smb_action_connect">Connect</string>
+
+    <!-- OneDriveDialogs.kt -->
+    <string name="onedrive_dialog_title">Connect to OneDrive</string>
+    <string name="onedrive_sign_in_hint">Sign in with the Microsoft account that holds your manga library.</string>
+    <string name="onedrive_sign_in">Sign in with Microsoft</string>
+    <string name="onedrive_picker_title">Choose your manga folder</string>
+    <string name="onedrive_picker_up">Up one level</string>
+    <string name="onedrive_picker_empty">No subfolders - you can still use this folder</string>
+    <string name="onedrive_picker_use_folder">Use this folder</string>
+    <string name="onedrive_picker_retry">Retry</string>
+    <string name="onedrive_error_list">Couldn't load folders - check your connection.</string>
 
     <!-- Shared selection-mode actions (MangaShelfGrid.kt + MangaDetailScreen.kt) -->
     <string name="selection_action_all">All</string>

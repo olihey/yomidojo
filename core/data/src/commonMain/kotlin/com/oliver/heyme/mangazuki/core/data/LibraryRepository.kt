@@ -276,11 +276,24 @@ class LibraryRepository(db: MangaDatabase) {
         )
     }
 
+    /** Same single configured-root row again, but for OneDrive (PLAN.md §6.3) — [configBlob] is
+     * [com.oliver.heyme.mangazuki.OneDriveConfig]'s root path (the OAuth tokens live in encrypted
+     * storage, not here), the same secret/non-secret split as [saveSmbSource]. */
+    suspend fun saveOneDriveSource(configBlob: String, displayName: String) = withContext(ioDispatcher) {
+        q.upsertSource(
+            id = LOCAL_SOURCE_ID,
+            type = "ONEDRIVE",
+            display_name = displayName,
+            config_json = configBlob,
+            sync_token = null,
+        )
+    }
+
     suspend fun savedLocalRoot(): String? = withContext(ioDispatcher) {
         q.selectSourceRoot(LOCAL_SOURCE_ID).executeAsOneOrNull()
     }
 
-    /** "LOCAL" or "SMB" for the single configured root, or null if none configured yet. */
+    /** "LOCAL", "SMB", or "ONEDRIVE" for the single configured root, or null if none configured yet. */
     suspend fun savedSourceType(): String? = withContext(ioDispatcher) {
         q.selectSourceType(LOCAL_SOURCE_ID).executeAsOneOrNull()
     }

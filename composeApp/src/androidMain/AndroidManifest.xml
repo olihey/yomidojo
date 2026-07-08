@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- AniList metadata enrichment + cover downloads (PLAN.md §9) — the app's only network use. -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -21,6 +22,24 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Second OAuth redirect for the OneDrive source (PLAN.md §6.3). AppAuth's own AAR
+             declares this activity with a single-scheme placeholder already claimed by Google
+             Drive sync's redirect (see appAuthRedirectScheme in build.gradle.kts), so this
+             tools:node="merge" entry appends one more intent-filter for Microsoft's redirect
+             URI without touching the Google one. Scheme/host must match
+             MICROSOFT_OAUTH_REDIRECT_URI in build.gradle.kts and the Azure registration. -->
+        <activity
+            android:name="net.openid.appauth.RedirectUriReceiverActivity"
+            android:exported="true"
+            tools:node="merge">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.oliver.heyme.mangazuki" android:host="onedrive-auth" />
             </intent-filter>
         </activity>
     </application>

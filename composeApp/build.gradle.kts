@@ -5,6 +5,9 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
+    // For the OneDrive source's @Serializable Graph DTOs (PLAN.md §6.3) — core:sync and
+    // core:metadata already apply the same plugin for their own wire formats.
+    alias(libs.plugins.kotlin.serialization)
 }
 
 // Google Drive sync's OAuth client id (PLAN.md §10) -- not a build-time secret in the usual
@@ -33,6 +36,18 @@ val googleOAuthRedirectScheme = googleOAuthClientId
     .takeIf { it.isNotBlank() }
     ?.let { "com.googleusercontent.apps.$it" }
     ?: "com.oliver.heyme.mangazuki" // placeholder so the manifest merge still succeeds when unset
+
+// The OneDrive manga source's Azure app (client) id (PLAN.md §6.3) -- a "Mobile and desktop
+// applications" public client, so unlike Google there is no secret at all; PKCE alone secures
+// the exchange. Same local.properties/gitignore treatment: missing/blank just means the
+// OneDrive option shows a "not set up" error until MICROSOFT_OAUTH_CLIENT_ID is added.
+val microsoftOAuthClientId = localProperties.getProperty("MICROSOFT_OAUTH_CLIENT_ID", "")
+
+// Unlike Google's reverse-DNS-of-the-client-id requirement, Microsoft accepts any custom
+// scheme, so this is a fixed constant (also registered as the redirect URI in Azure and
+// declared as an extra RedirectUriReceiverActivity intent-filter in AndroidManifest.xml --
+// three places that must agree, hence a single definition here feeding two of them).
+val microsoftOAuthRedirectUri = "com.oliver.heyme.mangazuki://onedrive-auth"
 
 kotlin {
     androidTarget()
@@ -81,6 +96,13 @@ kotlin {
             implementation(libs.coil.network.ktor)
             implementation(libs.smbj)
             implementation(libs.androidx.security.crypto)
+            // OneDrive source (PLAN.md §6.3): Ktor JSON for Graph metadata, direct OkHttp for
+            // byte streams (ResponseBody.source() is an okio.BufferedSource — zero-copy fit
+            // for MangaSource.open and ranged CBZ reads).
+            implementation(libs.ktor.client.contentnegotiation)
+            implementation(libs.ktor.serialization.json)
+            implementation(libs.kotlinx.serialization.json)
+            implementation(libs.okhttp)
         }
         getByName("androidUnitTest").dependencies {
             implementation(libs.kotlin.test)
@@ -88,6 +110,10 @@ kotlin {
             // In-memory SQLite for a real LibraryRepository in tests (mirrors core:data's own
             // androidUnitTest setup) -- JVM-only JDBC driver, not the on-device Android one.
             implementation(libs.sqldelight.sqlite.driver)
+            // Scripted HTTP responses for OneDriveMangaSource tests (pagination, 429 retry).
+            implementation(libs.ktor.client.mock)
+            // In-memory Settings for constructing real preferences objects in VM tests.
+            implementation(libs.multiplatform.settings.test)
         }
     }
 }
@@ -110,6 +136,8 @@ android {
         buildConfigField("String", "GOOGLE_OAUTH_CLIENT_ID", "\"$googleOAuthClientId\"")
         buildConfigField("String", "GOOGLE_OAUTH_CLIENT_SECRET", "\"$googleOAuthClientSecret\"")
         buildConfigField("String", "GOOGLE_OAUTH_REDIRECT_SCHEME", "\"$googleOAuthRedirectScheme\"")
+        buildConfigField("String", "MICROSOFT_OAUTH_CLIENT_ID", "\"$microsoftOAuthClientId\"")
+        buildConfigField("String", "MICROSOFT_OAUTH_REDIRECT_URI", "\"$microsoftOAuthRedirectUri\"")
     }
 
     buildFeatures {

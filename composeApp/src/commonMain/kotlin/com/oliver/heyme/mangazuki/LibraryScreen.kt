@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.oliver.heyme.mangazuki.core.data.LibraryCard
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import manga_reader.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -46,6 +48,9 @@ fun LibraryScreen(
     onSettingsClick: () -> Unit,
     titleLanguage: TitleLanguage,
     startScreen: StartScreen = StartScreen.LIBRARY,
+    /** OneDrive sign-in state/trigger (PLAN.md §6.3) — Activity-owned, see [App]. */
+    oneDriveAuthState: StateFlow<OneDriveAuthState> = MutableStateFlow(OneDriveAuthState.SignedOut),
+    onOneDriveSignIn: () -> Unit = {},
 ) {
     // The redesigned dark full-bleed look (PLAN.md, "Manga Library Tablet" Claude Design) is
     // meant to run edge-to-edge -- otherwise the system status/nav bars sit on top of it as
@@ -70,6 +75,7 @@ fun LibraryScreen(
 
     var showAddSourceChooser by remember { mutableStateOf(false) }
     var showSmbDialog by remember { mutableStateOf(false) }
+    var showOneDriveDialog by remember { mutableStateOf(false) }
     val openChooser = { showAddSourceChooser = true }
 
     if (showAddSourceChooser) {
@@ -77,10 +83,19 @@ fun LibraryScreen(
             onDismiss = { showAddSourceChooser = false },
             onPickLocalFolder = { showAddSourceChooser = false; onPickFolder() },
             onPickSmbShare = { showAddSourceChooser = false; showSmbDialog = true },
+            onPickOneDrive = { showAddSourceChooser = false; showOneDriveDialog = true },
         )
     }
     if (showSmbDialog) {
         SmbConnectDialog(viewModel = viewModel, onDismiss = { showSmbDialog = false })
+    }
+    if (showOneDriveDialog) {
+        OneDriveConnectDialog(
+            viewModel = viewModel,
+            oneDriveAuthState = oneDriveAuthState,
+            onOneDriveSignIn = onOneDriveSignIn,
+            onDismiss = { showOneDriveDialog = false },
+        )
     }
 
     // The redesigned "Manga Shelf" look (Claude Design, imported 2026-07-06) covers both normal
@@ -118,10 +133,11 @@ fun LibraryScreen(
     )
 }
 
-/** Entry point for the "+" FAB and the re-grant banner (PLAN.md §6) — a source is either a
- * local SAF folder or an SMB share; picking either replaces the single configured root. */
+/** Entry point for the "+" FAB and the re-grant banner (PLAN.md §6) — a source is a local SAF
+ * folder, an SMB share, or a OneDrive folder (§6.3); picking any replaces the single
+ * configured root. */
 @Composable
-private fun AddSourceChooserDialog(onDismiss: () -> Unit, onPickLocalFolder: () -> Unit, onPickSmbShare: () -> Unit) {
+private fun AddSourceChooserDialog(onDismiss: () -> Unit, onPickLocalFolder: () -> Unit, onPickSmbShare: () -> Unit, onPickOneDrive: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.add_source_dialog_title)) },
@@ -129,6 +145,7 @@ private fun AddSourceChooserDialog(onDismiss: () -> Unit, onPickLocalFolder: () 
             Column {
                 TextButton(onClick = onPickLocalFolder, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.add_source_local_folder)) }
                 TextButton(onClick = onPickSmbShare, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.add_source_smb_share)) }
+                TextButton(onClick = onPickOneDrive, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.add_source_onedrive)) }
             }
         },
         confirmButton = {

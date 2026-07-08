@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var pickFolder: ActivityResultLauncher<Uri?>
     private lateinit var readerPrefs: ReaderPreferences
     private lateinit var signIn: ActivityResultLauncher<Intent>
+    private lateinit var oneDriveSignIn: ActivityResultLauncher<Intent>
     // Instance properties (not just onCreate locals) so onStart() can reach them for the
     // foreground sync trigger below.
     private lateinit var appPrefs: AppPreferences
@@ -57,6 +58,13 @@ class MainActivity : ComponentActivity() {
         val localSource = SafMangaSource(applicationContext)
         val source = ConfigurableMangaSource(localSource)
         val smbSourceFactory = AndroidSmbSourceFactory(applicationContext)
+        // One shared MicrosoftAuthManager for the sign-in launcher AND the factory (PLAN.md
+        // §6.3), so tokens saved by handleSignInResult are immediately visible to build().
+        val microsoftAuthManager = createMicrosoftAuthManager(applicationContext)
+        val oneDriveSourceFactory = AndroidOneDriveSourceFactory(microsoftAuthManager)
+        val oneDriveAuthState = MutableStateFlow<OneDriveAuthState>(
+            if (microsoftAuthManager.isSignedIn()) OneDriveAuthState.SignedIn else OneDriveAuthState.SignedOut,
+        )
 
         val database = createMangaDatabase(DatabaseDriverFactory(applicationContext).create())
         repository = LibraryRepository(database)
@@ -106,7 +114,7 @@ class MainActivity : ComponentActivity() {
         val syncScheduler = ProgressSyncScheduler(activityScope) { runSyncIfEnabled(appPrefs, authManager, repository) }
 
         viewModel = LibraryViewModel(
-            repository, scanner, source, localSource, smbSourceFactory, prefs, enricher, appPrefs, coversDir,
+            repository, scanner, source, localSource, smbSourceFactory, oneDriveSourceFactory, prefs, enricher, appPrefs, coversDir,
             clearImageCache = { imageLoader.diskCache?.clear(); imageLoader.memoryCache?.clear() },
             requestSync = syncScheduler::requestSync,
         )
@@ -169,6 +177,23 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Microsoft mirror of the Google launcher above (PLAN.md §6.3) — no post-sign-in side
+        // effects here: the OneDrive connect dialog observes oneDriveAuthState and advances to
+        // its folder-browser step itself once this flips to SignedIn.
+        oneDriveSignIn = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val data = result.data
+            if (data == null) {
+                oneDriveAuthState.value = OneDriveAuthState.SignedOut
+                return@registerForActivityResult
+            }
+            activityScope.launch {
+                oneDriveAuthState.value = microsoftAuthManager.handleSignInResult(data).fold(
+                    onSuccess = { OneDriveAuthState.SignedIn },
+                    onFailure = { OneDriveAuthState.Error(it.message ?: "Sign-in failed") },
+                )
+            }
+        }
+
         scheduleBackgroundScan()
         if (appPrefs.backgroundSyncEnabled.value) scheduleBackgroundSync()
 
@@ -189,6 +214,17 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                 onSignOut = { authManager.signOut(); appPrefs.setSyncEnabled(false); syncState.value = SyncState.SignedOut },
+                oneDriveAuthState = oneDriveAuthState,
+                onOneDriveSignIn = {
+                    // Same blank-client-id guard as Google's onSignIn above — the normal state
+                    // until MICROSOFT_OAUTH_CLIENT_ID is added to local.properties.
+                    if (BuildConfig.MICROSOFT_OAUTH_CLIENT_ID.isBlank()) {
+                        oneDriveAuthState.value = OneDriveAuthState.Error("OneDrive isn't set up yet — see local.properties")
+                    } else {
+                        oneDriveAuthState.value = OneDriveAuthState.SigningIn
+                        oneDriveSignIn.launch(microsoftAuthManager.signInIntent())
+                    }
+                },
             )
         }
     }

@@ -26,18 +26,24 @@ class ScanWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
         val database = createMangaDatabase(DatabaseDriverFactory(applicationContext).create())
         val repository = LibraryRepository(database)
 
-        // savedLocalRoot() holds a raw SAF URI for LOCAL, or an SmbConfig blob for SMB —
-        // resolve both the right MangaSource and the right scan locator from `type`.
+        // savedLocalRoot() holds a raw SAF URI for LOCAL, or an SmbConfig/OneDriveConfig blob
+        // otherwise — resolve both the right MangaSource and the right scan locator from `type`.
         val type = repository.savedSourceType()
         val configBlob = repository.savedLocalRoot() ?: return Result.success()
-        val smbConfig = if (type == "SMB") SmbConfig.fromBlob(configBlob) ?: return Result.success() else null
-        val source = if (smbConfig != null) {
-            val password = AndroidSmbSourceFactory(applicationContext).loadPassword() ?: ""
-            SmbMangaSource(smbConfig.host, smbConfig.share, smbConfig.username, password)
-        } else {
-            SafMangaSource(applicationContext)
+        val (source, root) = when (type) {
+            "SMB" -> {
+                val smbConfig = SmbConfig.fromBlob(configBlob) ?: return Result.success()
+                val password = AndroidSmbSourceFactory(applicationContext).loadPassword() ?: ""
+                SmbMangaSource(smbConfig.host, smbConfig.share, smbConfig.username, password) to smbConfig.rootPath
+            }
+            "ONEDRIVE" -> {
+                // Token refresh works from a worker too: MicrosoftAuthStore is process-wide, and
+                // a signed-out/offline run fails the canAccess guard below into a clean no-op.
+                val auth = createMicrosoftAuthManager(applicationContext)
+                OneDriveMangaSource(auth::accessToken) to OneDriveConfig.fromBlob(configBlob).rootPath
+            }
+            else -> SafMangaSource(applicationContext) to configBlob
         }
-        val root = smbConfig?.rootPath ?: configBlob
         if (!source.canAccess(root)) return Result.success() // grant lost; UI will prompt re-grant
 
         return try {

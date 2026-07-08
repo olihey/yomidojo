@@ -9,10 +9,21 @@ import androidx.compose.runtime.remember
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 /** Library → Series → Reader (PLAN.md §7.3), a plain nav-compose push stack. */
 @Composable
-fun App(graph: AppGraph, onPickFolder: () -> Unit, onSignIn: () -> Unit = {}, onSignOut: () -> Unit = {}) {
+fun App(
+    graph: AppGraph,
+    onPickFolder: () -> Unit,
+    onSignIn: () -> Unit = {},
+    onSignOut: () -> Unit = {},
+    // OneDrive source sign-in (PLAN.md §6.3) -- an Activity-owned callback/state pair like
+    // onSignIn/syncState, but terminating at LibraryScreen's connect dialog instead of Settings.
+    oneDriveAuthState: StateFlow<OneDriveAuthState> = MutableStateFlow(OneDriveAuthState.SignedOut),
+    onOneDriveSignIn: () -> Unit = {},
+) {
     val navController = rememberNavController()
     val titleLanguage by graph.appPreferences.titleLanguage.collectAsState()
     // Always dark: the app's whole visual language (MangaColors, the shelf/detail designs) is
@@ -33,6 +44,8 @@ fun App(graph: AppGraph, onPickFolder: () -> Unit, onSignIn: () -> Unit = {}, on
                     // value (PLAN.md), not observed reactively -- changing this setting mid-session
                     // shouldn't yank the user off whichever tab they're already on.
                     startScreen = graph.appPreferences.startScreen.value,
+                    oneDriveAuthState = oneDriveAuthState,
+                    onOneDriveSignIn = onOneDriveSignIn,
                 )
             }
             composable("settings") {

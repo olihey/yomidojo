@@ -302,7 +302,8 @@ is a real, registered `DocumentsProvider`, but returns no roots to the system pi
 a personal account). SMB is the practical alternative instead: it's how manga libraries
 are actually already hosted (NAS boxes, Windows shares, Hetzner-style storage boxes),
 auth is plain username/password (no OAuth), and the protocol genuinely supports random
-access, unlike a REST-based cloud API.
+access, unlike a REST-based cloud API. (OneDrive itself later landed anyway via the Graph
+REST API directly rather than SAF — see §6.3.)
 
 **Scope: still single-source.** The app keeps its existing single-active-root model
 (one configured `source` row, `LibraryRepository.LOCAL_SOURCE_ID`) — SMB is a second
@@ -469,6 +470,73 @@ entries incomplete/malformed, count mismatch) discards the whole thing and falls
 today's per-page decode exactly as before — no partial trust. Verified on-device: the tagged
 35-page chapter now opens in under 3 seconds (down from the network-bound per-page probe);
 the untagged 343MB chapter still opens correctly via the fallback (unchanged, still ~140s).
+
+### 6.3 OneDrive (Microsoft Graph) source
+
+The direct-API answer to §6.1's opening dead end: OneDrive-via-SAF is unusable for personal
+accounts, but Microsoft Graph's REST API works fine — and because its per-item
+`@microsoft.graph.downloadUrl` is pre-authenticated and honors HTTP `Range` requests, a
+OneDrive source rides §6.2's existing `RANGE_READ`/`RangedBacking` path unchanged: a CBZ
+open costs one Graph metadata call plus two small positional reads for the ZIP central
+directory, then only each page's own bytes. No temp-copy shim (§11's fallback for
+range-less cloud stores) was needed.
+
+Locked decisions:
+- **Personal Microsoft accounts only** → the `consumers` OAuth endpoints
+  (`login.microsoftonline.com/consumers/oauth2/v2.0/...`); work/school accounts are a
+  deferred item (§16).
+- **AppAuth reused, not MSAL**: `GoogleAuthManager`'s battle-tested logic was extracted
+  verbatim into an `open class AppAuthManager` (`core:sync` androidMain) parameterized on
+  endpoints/scope/client-auth, with `GoogleAuthManager` (unchanged public signature) and the
+  new `MicrosoftAuthManager` as thin subclasses. The stores share an `EncryptedAuthStateStore`
+  base (`AuthStateStore.kt`); Microsoft's tokens live in their own prefs file
+  (`microsoft_auth_state`), so per-provider sign-out can't cross-contaminate.
+- **Public client, no secret**: the Azure registration is a "Mobile and desktop applications"
+  platform entry, PKCE-only (`clientSecret = null` → `NoClientAuthentication`). Scope:
+  `Files.Read offline_access` (read-only; `offline_access` is what yields a refresh token).
+- **In-app folder browser** (not a typed path field): after sign-in, the connect dialog lists
+  drive folders via the candidate source (drill down / up / "Use this folder"), so nothing is
+  persisted or reconfigured until the chosen root has actually been listed and re-validated —
+  `connectOneDrive` keeps `connectSmb`'s validate-before-persist contract.
+
+Mechanics, mirroring SMB's shape throughout:
+- `OneDriveMangaSource` (`composeApp/src/androidMain`), `id = "onedrive"` (frozen — it feeds
+  `deterministicId`), `capabilities = {RANDOM_ACCESS, RANGE_READ}`. Locators are
+  drive-root-relative `/`-joined paths (`""` = drive root). Two HTTP stacks on purpose: Ktor
+  (the `GoogleDriveSyncBackend` configuration) for Graph JSON, direct OkHttp for byte streams
+  (`ResponseBody.source()` IS an `okio.BufferedSource` — zero-copy into `open()`'s
+  `okio.Source` and `readAt`'s range reads, where Ktor 3 can't escape a streaming body from
+  its `execute {}` scope).
+- `OneDriveGraph.kt` holds the pure half (DTOs, `root:/{path}:` URL builders with
+  per-segment percent-encoding, `SourceEntry` mapping) — unit-tested including spaces/`#`/
+  `%`/`+`/unicode names, `$top=200` + `@odata.nextLink` pagination, and bounded
+  `Retry-After`-honoring 429 retries. `changeToken = eTag` (the scanner's skip-cache only
+  compares equality, so an opaque eTag substitutes for the other sources' mtime strings).
+  `SourceEntry.size` is nulled for folders (Graph reports recursive folder sizes) and
+  required for files — without it `CbzArchive` silently buffers whole archives (§6.2 bug 1).
+- Download URLs expire (~1h): `openRandomAccess` caches the URL per handle and refreshes it
+  once via a metadata re-fetch on 401/403/404/410; a 200 response to a `Range` request
+  (server ignoring the header) is treated as an error rather than silently buffering.
+- `OneDriveConfig` (rootPath-only blob) in `source.config_json` with `type = "ONEDRIVE"`
+  (`LibraryRepository.saveOneDriveSource`); tokens never touch the DB. Cold start
+  reconfigures via the nullable `OneDriveSourceFactory` seam (mirror of `SmbSourceFactory`;
+  `AndroidOneDriveSourceFactory` wraps the same `MicrosoftAuthManager` instance
+  `MainActivity`'s sign-in launcher uses). `ScanWorker` gained an ONEDRIVE branch; a
+  signed-out/offline background run no-ops via the existing `canAccess` guard, and
+  `canAccess` returning false on token loss routes revocation into the existing
+  `needsReGrant` banner. Settings → Reset library also clears the Microsoft tokens.
+- Sign-in UI state is `OneDriveAuthState` (commonMain mirror of `SyncState`), owned by
+  `MainActivity` (a second AppAuth `ActivityResultLauncher`); the redirect URI is the fixed
+  `com.oliver.heyme.mangazuki://onedrive-auth`, declared as an extra intent-filter on
+  AppAuth's `RedirectUriReceiverActivity` via `tools:node="merge"` (the single-valued
+  `appAuthRedirectScheme` placeholder stays Google's).
+
+One-time setup (developer): Entra → App registrations → New, supported account types =
+"Personal Microsoft accounts only", platform "Mobile and desktop applications" with redirect
+URI `com.oliver.heyme.mangazuki://onedrive-auth`, delegated `Files.Read` permission, no
+secret; put the Application (client) ID in `local.properties` as
+`MICROSOFT_OAUTH_CLIENT_ID`. Missing/blank shows a graceful "not set up" error in the
+connect dialog, same convention as Google sync.
 
 ---
 
@@ -1328,6 +1396,9 @@ unmatched series still sync on normalized title.
     must first materialize a **local temp copy** (or use HTTP range reads against a seekable
     handle where the backend supports it) before paging — it cannot stream a remote ZIP
     page-by-page. The provider branches on the source's `RANDOM_ACCESS` capability.
+    (Resolved for OneDrive without any temp-copy shim: Graph's pre-authenticated download
+    URLs honor HTTP `Range`, so `OneDriveMangaSource` declares `RANGE_READ` and rides §6.2's
+    `RangedBacking` path directly — see §6.3.)
 - **PDF:** *deferred* — see §16.
 
 ---
@@ -1792,6 +1863,13 @@ no source changes. If adding PDF needs the reader or DB to change, a seam leaked
 - **Categories/shelves & reading-status grouping** — a `category` table + join + filter row.
 - **Backup/restore** — JSON export/import of library, matches, categories, progress
   (cheap thanks to deterministic IDs).
+- **OneDrive delta API → `DELTA_SYNC`** — Graph's `/delta` endpoint is the natural first
+  real implementation of `MangaSource.changesSince` (§6.3 ships with the same no-op as
+  SMB/SAF; the `source.sync_token` column already exists for the cursor).
+- **OneDrive work/school accounts & multi-account** — §6.3 is deliberately
+  personal-accounts-only (`consumers` endpoint); business drives need the `organizations`/
+  `common` endpoint plus admin-consent handling, and multi-account needs per-account
+  auth stores.
 
 ---
 

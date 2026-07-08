@@ -183,6 +183,25 @@ class LibraryRepositoryTest {
         assertEquals(0L, db.schemaQueries.selectSeriesCount().executeAsOne())
     }
 
+    @Test
+    fun onedrive_source_round_trips_and_type_switches_take_effect() = runTest {
+        val (repo, _) = newRepo()
+
+        // ONEDRIVE persists like the other types (PLAN.md §6.3), including a "" drive root.
+        repo.saveOneDriveSource("Documents/Manga", "OneDrive: /Documents/Manga")
+        assertEquals("ONEDRIVE", repo.savedSourceType())
+        assertEquals("Documents/Manga", repo.savedLocalRoot())
+        repo.saveOneDriveSource("", "OneDrive: /")
+        assertEquals("", repo.savedLocalRoot())
+
+        // Switching to another type reuses the fixed row id -- `type` must actually update.
+        repo.saveSmbSource("host|share|Manga|user", "smb://host/share")
+        assertEquals("SMB", repo.savedSourceType())
+        repo.saveOneDriveSource("Manga", "OneDrive: /Manga")
+        assertEquals("ONEDRIVE", repo.savedSourceType())
+        assertEquals("Manga", repo.savedLocalRoot())
+    }
+
     private fun details() = RemoteWorkDetails(
         externalId = "42",
         title = "A",
