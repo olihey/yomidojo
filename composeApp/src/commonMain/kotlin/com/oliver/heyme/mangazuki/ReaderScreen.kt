@@ -1,7 +1,10 @@
 package com.oliver.heyme.mangazuki
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -299,23 +302,32 @@ private fun PagedReader(
             )
         }
 
-        if (showChrome && pagerState.currentPage < units.size) {
-            val rawPage = progressIndexFor(units.getOrNull(pagerState.currentPage))
-            ReaderChrome(
-                seriesTitle = viewModel.seriesTitle,
-                chapter = viewModel.chapter,
-                currentPage = rawPage,
-                pageCount = pageCount,
-                readingMode = readingMode,
-                readingDirectionRtl = readingDirectionRtl,
-                invertTapZones = viewModel.invertTapZones,
-                onReadingModeChange = viewModel::setReadingMode,
-                onBack = onBack,
-                onSeek = { target ->
-                    scope.launch { pagerState.scrollToPage(unitIndexForPage(units, target)) }
-                },
-                onScrubbingChanged = onScrubbingChanged,
-            )
+        AnimatedVisibility(
+            visible = showChrome && pagerState.currentPage < units.size,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            // Inner Box restores the BoxScope that ReaderChrome's `.align` calls need
+            // (AnimatedVisibility's content runs in AnimatedVisibilityScope, not BoxScope).
+            Box(Modifier.fillMaxSize()) {
+                val rawPage = progressIndexFor(units.getOrNull(pagerState.currentPage))
+                ReaderChrome(
+                    seriesTitle = viewModel.seriesTitle,
+                    chapter = viewModel.chapter,
+                    currentPage = rawPage,
+                    pageCount = pageCount,
+                    readingMode = readingMode,
+                    readingDirectionRtl = readingDirectionRtl,
+                    invertTapZones = viewModel.invertTapZones,
+                    onReadingModeChange = viewModel::setReadingMode,
+                    onBack = onBack,
+                    onSeek = { target ->
+                        scope.launch { pagerState.scrollToPage(unitIndexForPage(units, target)) }
+                    },
+                    onScrubbingChanged = onScrubbingChanged,
+                )
+            }
         }
     }
 }
@@ -489,18 +501,25 @@ private fun ContinuousReader(
                 }
             }
         }
-        if (showChrome) {
-            ReaderChrome(
-                seriesTitle = viewModel.seriesTitle,
-                chapter = viewModel.chapter,
-                currentPage = listState.firstVisibleItemIndex.coerceIn(0, pageCount - 1),
-                pageCount = pageCount,
-                readingMode = readingMode,
-                onReadingModeChange = onReadingModeChange,
-                onBack = onBack,
-                onSeek = { target -> scope.launch { listState.scrollToItem(target.coerceIn(0, pageCount - 1)) } },
-                onScrubbingChanged = onScrubbingChanged,
-            )
+        AnimatedVisibility(
+            visible = showChrome,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                ReaderChrome(
+                    seriesTitle = viewModel.seriesTitle,
+                    chapter = viewModel.chapter,
+                    currentPage = listState.firstVisibleItemIndex.coerceIn(0, pageCount - 1),
+                    pageCount = pageCount,
+                    readingMode = readingMode,
+                    onReadingModeChange = onReadingModeChange,
+                    onBack = onBack,
+                    onSeek = { target -> scope.launch { listState.scrollToItem(target.coerceIn(0, pageCount - 1)) } },
+                    onScrubbingChanged = onScrubbingChanged,
+                )
+            }
         }
     }
 }
