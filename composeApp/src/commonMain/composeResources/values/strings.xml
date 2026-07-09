@@ -21,11 +21,16 @@
     <string name="metadata_attribution_anilist">Data provided by AniList</string>
     <string name="metadata_attribution_kitsu">Data provided by Kitsu</string>
 
-    <!-- LibraryScreen.kt: AddSourceChooserDialog -->
-    <string name="add_source_dialog_title">Add library source</string>
-    <string name="add_source_local_folder">Local folder</string>
-    <string name="add_source_smb_share">SMB share</string>
+    <!-- AddSourceDialog.kt -->
+    <string name="add_source_eyebrow">Library source</string>
+    <string name="add_source_dialog_title">Add a source</string>
+    <string name="add_source_subtitle">Choose where your library should read titles from.</string>
+    <string name="add_source_local_folder">Local files</string>
+    <string name="add_source_local_desc">Point to a folder on this device</string>
+    <string name="add_source_smb_share">SMB server</string>
+    <string name="add_source_smb_desc">Connect to a shared network drive</string>
     <string name="add_source_onedrive">OneDrive</string>
+    <string name="add_source_onedrive_desc">Sync titles from your OneDrive account</string>
 
     <!-- LibraryScreen.kt: SmbConnectDialog -->
     <string name="smb_dialog_title">Connect to SMB share</string>

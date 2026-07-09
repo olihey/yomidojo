@@ -133,26 +133,7 @@ fun LibraryScreen(
     )
 }
 
-/** Entry point for the "+" FAB and the re-grant banner (PLAN.md §6) — a source is a local SAF
- * folder, an SMB share, or a OneDrive folder (§6.3); picking any replaces the single
- * configured root. */
-@Composable
-private fun AddSourceChooserDialog(onDismiss: () -> Unit, onPickLocalFolder: () -> Unit, onPickSmbShare: () -> Unit, onPickOneDrive: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(Res.string.add_source_dialog_title)) },
-        text = {
-            Column {
-                TextButton(onClick = onPickLocalFolder, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.add_source_local_folder)) }
-                TextButton(onClick = onPickSmbShare, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.add_source_smb_share)) }
-                TextButton(onClick = onPickOneDrive, modifier = Modifier.fillMaxWidth()) { Text(stringResource(Res.string.add_source_onedrive)) }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.action_cancel)) }
-        },
-    )
-}
+// AddSourceChooserDialog lives in AddSourceDialog.kt (the "Add Source Dialog" Claude Design).
 
 /** SMB connect dialog (PLAN.md §6) — mirrors [SeriesScreen.kt]'s `FixMetadataDialog`
  * convention (`AlertDialog` + `OutlinedTextField`s + `TextButton`s). Runs
