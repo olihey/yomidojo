@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">MangaZuki</string>
+    <string name="app_name">YomiDojo</string>
 
     <!-- Common actions, reused across dialogs -->
     <string name="action_cancel">Abbrechen</string>

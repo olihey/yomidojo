@@ -1,4 +1,4 @@
-# MangaZuki — Cross-Platform KMP Solution Plan
+# YomiDojo — Cross-Platform KMP Solution Plan
 
 A Kotlin Multiplatform plan for an iOS + Android manga reader supporting image
 folders and CBZ, with a configurable, responsive viewer, a scanning library backed
@@ -1950,6 +1950,17 @@ no source changes. If adding PDF needs the reader or DB to change, a seam leaked
   Changing `applicationId` makes this a new app to Android/the OAuth client registration:
   any already-configured Google Cloud OAuth client's package name + debug keystore SHA-1
   must be re-registered under the new package name.
+- **Display name: YomiDojo (2026-07-09).** Rebranded again from MangaZuki, display-name-only
+  this time — `applicationId`/`namespace` (`com.oliver.heyme.mangazuki`) and the OAuth redirect
+  scheme are unchanged, so no OAuth client re-registration is needed. Updated: the manifest's
+  `android:label`, the (otherwise-unused) `app_name` string resource, and the Library screen's
+  masthead header text (`MangaShelfGrid.kt`'s `MastheadTitleBlock`). The launcher icon changed
+  alongside it, sourced from `docs/app-icon-source.png` (1024×1024) — regenerated as legacy
+  `ic_launcher(_round).png` at all five densities, and as an adaptive-icon **background** raster
+  (`ic_launcher_background.png`, same density set) with a transparent foreground layer, replacing
+  the old solid-color background + raster-foreground split (the new artwork is one flat
+  full-bleed image, not a layered design, so a raster background with an empty foreground is the
+  simpler fit than inventing an artificial safe-zone inset).
 
 No open decisions remain. The plan is build-ready for Phase 0 on Android.
 

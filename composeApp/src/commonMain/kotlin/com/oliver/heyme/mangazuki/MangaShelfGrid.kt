@@ -269,7 +269,7 @@ private fun ShelfMasthead(
 private fun MastheadTitleBlock(activeTab: LibraryTab, onTabChange: (LibraryTab) -> Unit, archivo: FontFamily, anton: FontFamily, modifier: Modifier = Modifier) {
     Column(modifier) {
         Text(
-            "MANGAZUKI", color = MangaColors.Accent, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
+            "YOMIDOJO", color = MangaColors.Accent, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
             fontSize = 10.sp, letterSpacing = 3.sp,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 4.dp)) {
