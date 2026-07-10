@@ -46,8 +46,9 @@ enum class SortMode { NAME, RECENTLY_ADDED, RECENTLY_READ, RELEASE_START }
 
 /** Library filter (PLAN.md §7.1): "Hide matched" is the AniList-match counterpart of "Hide
  * read" — hides series that already have an `external_id`, for focusing on what Fix Metadata
- * still needs to look at (PLAN.md §9.1). */
-enum class LibraryFilter { SHOW_ALL, HIDE_READ, HIDE_MATCHED }
+ * still needs to look at (PLAN.md §9.1). "Show in progress" narrows to partially-read series —
+ * the same definition the "Your Page" dashboard's [LibraryViewModel.inProgress] uses. */
+enum class LibraryFilter { SHOW_ALL, SHOW_IN_PROGRESS, HIDE_READ, HIDE_MATCHED }
 
 class LibraryViewModel(
     private val repository: LibraryRepository,
@@ -119,6 +120,8 @@ class LibraryViewModel(
                 if (inputs.query.isNotBlank()) list = list.filter { it.title.contains(inputs.query, ignoreCase = true) }
                 when (inputs.filter) {
                     LibraryFilter.SHOW_ALL -> {}
+                    // Same "partially read" definition as [inProgress] (Your Page's feed).
+                    LibraryFilter.SHOW_IN_PROGRESS -> list = list.filter { it.chapterCount > 0 && it.unreadCount in 1 until it.chapterCount }
                     LibraryFilter.HIDE_READ -> list = list.filter { it.unreadCount > 0 }
                     LibraryFilter.HIDE_MATCHED -> list = list.filter { it.externalId == null }
                 }

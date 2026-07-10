@@ -95,6 +95,7 @@
     <string name="sort_recently_read">Kürzlich gelesen</string>
     <string name="sort_release_start">Erscheinungsbeginn</string>
     <string name="filter_show_all">Alle anzeigen</string>
+    <string name="filter_show_in_progress">Angefangene anzeigen</string>
     <string name="filter_hide_read">Gelesene ausblenden</string>
     <string name="filter_hide_matched">Zugeordnete ausblenden</string>
 

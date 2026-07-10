@@ -95,6 +95,7 @@
     <string name="sort_recently_read">Recently read</string>
     <string name="sort_release_start">Release start</string>
     <string name="filter_show_all">Show all</string>
+    <string name="filter_show_in_progress">Show in progress</string>
     <string name="filter_hide_read">Hide read</string>
     <string name="filter_hide_matched">Hide matched</string>
 

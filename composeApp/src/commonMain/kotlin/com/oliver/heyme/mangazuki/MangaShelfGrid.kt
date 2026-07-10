@@ -97,6 +97,7 @@ private fun SortMode.label(): String = when (this) {
 @Composable
 private fun LibraryFilter.label(): String = when (this) {
     LibraryFilter.SHOW_ALL -> stringResource(Res.string.filter_show_all)
+    LibraryFilter.SHOW_IN_PROGRESS -> stringResource(Res.string.filter_show_in_progress)
     LibraryFilter.HIDE_READ -> stringResource(Res.string.filter_hide_read)
     LibraryFilter.HIDE_MATCHED -> stringResource(Res.string.filter_hide_matched)
 }
