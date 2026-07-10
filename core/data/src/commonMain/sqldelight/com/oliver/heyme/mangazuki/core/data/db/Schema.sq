@@ -157,6 +157,9 @@ SELECT
   s.external_id, s.metadata_checked_at, s.title_romaji, s.title_english, s.title_native,
   COUNT(DISTINCT c.id) AS chapter_count,
   COUNT(DISTINCT CASE WHEN p.completed = 1 THEN c.id END) AS read_count,
+  -- Mid-read chapters (some pages, not completed) -- what makes a series "in progress" even
+  -- when nothing is finished yet. Mark-unread resets last_page_index to 0, so it can't linger.
+  COUNT(DISTINCT CASE WHEN p.completed = 0 AND p.last_page_index > 0 THEN c.id END) AS started_count,
   MAX(c.date_added) AS latest_chapter_added,
   MAX(p.updated_at) AS latest_read,
   cover.locator AS cover_locator,

@@ -521,7 +521,7 @@ private fun ShelfCard(
     val title = c.displayTitle(titleLanguage)
     val readCount = c.chapterCount - c.unreadCount
     val percent = if (c.chapterCount > 0) readCount * 100 / c.chapterCount else 0
-    val isContinuing = c.unreadCount in 1 until c.chapterCount
+    val isContinuing = c.isInProgress
 
     Column(Modifier.combinedClickable(onClick = { onClick(c.id) }, onLongClick = { onLongClick(c.id) })) {
         Box(

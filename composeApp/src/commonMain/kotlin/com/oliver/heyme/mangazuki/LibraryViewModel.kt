@@ -121,7 +121,7 @@ class LibraryViewModel(
                 when (inputs.filter) {
                     LibraryFilter.SHOW_ALL -> {}
                     // Same "partially read" definition as [inProgress] (Your Page's feed).
-                    LibraryFilter.SHOW_IN_PROGRESS -> list = list.filter { it.chapterCount > 0 && it.unreadCount in 1 until it.chapterCount }
+                    LibraryFilter.SHOW_IN_PROGRESS -> list = list.filter { it.isInProgress }
                     LibraryFilter.HIDE_READ -> list = list.filter { it.unreadCount > 0 }
                     LibraryFilter.HIDE_MATCHED -> list = list.filter { it.externalId == null }
                 }
@@ -141,9 +141,10 @@ class LibraryViewModel(
 
     /** Partially-read series (some progress, not finished), most-recently-read first -- the
      * "Your Page" dashboard's own view of the library (PLAN.md), independent of the Library
-     * tab's own search/sort/filter state. */
+     * tab's own search/sort/filter state. See [LibraryCard.isInProgress] for the definition
+     * (shared with the "Show in progress" filter and the shelf card's CONTINUE badge). */
     val inProgress: StateFlow<List<LibraryCard>> = allCards.map { list ->
-        list.filter { it.chapterCount > 0 && it.unreadCount in 1 until it.chapterCount }
+        list.filter { it.isInProgress }
             .sortedByDescending { it.latestRead ?: 0L }
     }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

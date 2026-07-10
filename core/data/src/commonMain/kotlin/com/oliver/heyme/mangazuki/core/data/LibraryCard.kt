@@ -9,6 +9,8 @@ data class LibraryCard(
     val coverPath: String?,
     val chapterCount: Int,
     val unreadCount: Int,
+    /** Chapters someone is mid-read in (pages recorded, not completed) — see [isInProgress]. */
+    val startedCount: Int,
     val latestChapterAdded: Long,
     val latestRead: Long?,
     /** AniList `startDate.year`, once matched (PLAN.md §9) — drives the "release start" sort. */
@@ -32,7 +34,15 @@ data class LibraryCard(
      * or "imgdir:<uri>" (first image in the folder). Null if the series has no chapters.
      */
     val coverModel: String?,
-)
+) {
+    /** "Currently being read": not finished, and with real progress — either some chapters
+     * completed, or at least one chapter mid-read ([startedCount], which covers a series whose
+     * very first chapter is only partially read and would otherwise not count). One definition
+     * for the Your Page "Jump back in"/"On your shelf" feeds, the library's "Show in progress"
+     * filter, and the shelf card's CONTINUE badge. */
+    val isInProgress: Boolean
+        get() = chapterCount > 0 && unreadCount > 0 && (unreadCount < chapterCount || startedCount > 0)
+}
 
 /** A chapter row for the series screen, with derived read state (PLAN.md §7.3). */
 data class ChapterCard(

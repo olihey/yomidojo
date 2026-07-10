@@ -38,6 +38,7 @@ class LibraryRepository(db: MangaDatabase) {
                     coverPath = r.cover_path,
                     chapterCount = r.chapter_count.toInt(),
                     unreadCount = (r.chapter_count - r.read_count).toInt(),
+                    startedCount = r.started_count.toInt(),
                     latestChapterAdded = r.latest_chapter_added ?: r.date_added,
                     latestRead = r.latest_read,
                     startYear = r.start_year?.toInt(),
