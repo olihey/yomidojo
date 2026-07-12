@@ -60,12 +60,15 @@ fun App(
                     onBackgroundSyncEnabledChanged = graph.onBackgroundSyncEnabledChanged,
                     fetchProgressJson = graph.fetchProgressJson,
                     fetchMetadataAliasesJson = graph.fetchMetadataAliasesJson,
+                    fetchFavoritesJson = graph.fetchFavoritesJson,
                     clearProgressJson = graph.clearProgressJson,
                     clearMetadataAliasesJson = graph.clearMetadataAliasesJson,
+                    clearFavoritesJson = graph.clearFavoritesJson,
                     exportJsonFile = graph.exportJsonFile,
                     pickJsonFile = graph.pickJsonFile,
                     importProgressJson = graph.importProgressJson,
                     importMetadataAliasesJson = graph.importMetadataAliasesJson,
+                    importFavoritesJson = graph.importFavoritesJson,
                     isDebugBuild = graph.isDebugBuild,
                 )
             }

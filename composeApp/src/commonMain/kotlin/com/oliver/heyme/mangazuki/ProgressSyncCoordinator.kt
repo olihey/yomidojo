@@ -1,10 +1,14 @@
 package com.oliver.heyme.mangazuki
 
 import com.oliver.heyme.mangazuki.core.data.LibraryRepository
+import com.oliver.heyme.mangazuki.core.domain.FavoriteRow
 import com.oliver.heyme.mangazuki.core.domain.MetadataAliasRow
 import com.oliver.heyme.mangazuki.core.domain.SyncProgressRow
+import com.oliver.heyme.mangazuki.core.sync.FavoriteRecord
+import com.oliver.heyme.mangazuki.core.sync.FavoritesBackend
 import com.oliver.heyme.mangazuki.core.sync.MetadataAliasBackend
 import com.oliver.heyme.mangazuki.core.sync.MetadataAliasRecord
+import com.oliver.heyme.mangazuki.core.sync.NoOpFavoritesBackend
 import com.oliver.heyme.mangazuki.core.sync.NoOpMetadataAliasBackend
 import com.oliver.heyme.mangazuki.core.sync.SeriesKey
 import com.oliver.heyme.mangazuki.core.sync.SeriesProgressRecord
@@ -12,6 +16,7 @@ import com.oliver.heyme.mangazuki.core.sync.SyncBackend
 import com.oliver.heyme.mangazuki.core.sync.VolumeProgress
 import com.oliver.heyme.mangazuki.core.sync.bridgedWith
 import com.oliver.heyme.mangazuki.core.sync.resolveAliasWinners
+import com.oliver.heyme.mangazuki.core.sync.resolveFavoriteWinners
 import com.oliver.heyme.mangazuki.core.sync.resolveSyncGroups
 import com.oliver.heyme.mangazuki.core.sync.winner
 import kotlinx.coroutines.sync.withLock
@@ -41,6 +46,10 @@ class ProgressSyncCoordinator(
     // records anything, passing a no-op when the toggle is off (same backend-substitution
     // pattern as [aliasBackend] itself) so the byline doesn't claim a sync that didn't happen.
     private val onAliasSyncCompleted: () -> Unit = {},
+    // Favorite series (PLAN.md §10) -- third Drive file, same backend-substitution pattern:
+    // the call site passes NoOpFavoritesBackend when Settings' "Sync favorites" is off.
+    private val favoritesBackend: FavoritesBackend = NoOpFavoritesBackend,
+    private val onFavoriteSyncCompleted: () -> Unit = {},
 ) {
     /** Wrapped in the same [libraryWriteMutex] as [LibrarySyncer.sync]/[MetadataEnricher.enrichPending]
      * — this writes `reading_progress` rows a concurrent rescan could also touch. */
@@ -82,8 +91,23 @@ class ProgressSyncCoordinator(
             }
         }
 
+        // Favorites (PLAN.md §10) -- structurally the alias half again: per-series records,
+        // plain title-keyed LWW merge, apply locally where the series exists, push the full
+        // reconciled set. A record for a series this device hasn't scanned round-trips through
+        // the push untouched, same as an unresolvable progress record above.
+        val localFavorites = repository.allFavoritesForSync().map { it.toFavoriteRecord() }
+        val remoteFavorites = favoritesBackend.pullFavorites()
+        val favoriteWinners = resolveFavoriteWinners(localFavorites + remoteFavorites)
+        favoriteWinners.forEach { record ->
+            val seriesId = repository.resolveLocalSeriesId(record.provider, record.externalId, record.normalizedTitle)
+                ?: return@forEach
+            repository.applyFavoriteIfNewer(seriesId, record.favorited, record.updatedAt, record.deviceId)
+        }
+
         backend.push(winners)
         aliasBackend.pushAliases(aliasWinners)
+        favoritesBackend.pushFavorites(favoriteWinners)
+        onFavoriteSyncCompleted()
         onAliasSyncCompleted()
         onSyncCompleted()
     }
@@ -111,5 +135,14 @@ private fun MetadataAliasRow.toAliasRecord() = MetadataAliasRecord(
     updatedAt = updatedAt,
     // A locally-recorded alias always has a real deviceId (recordMetadataAlias requires one);
     // null only appears here in principle, same defensive default as SyncProgressRow.
+    deviceId = deviceId ?: "",
+)
+
+private fun FavoriteRow.toFavoriteRecord() = FavoriteRecord(
+    normalizedTitle = normalizedTitle,
+    provider = provider,
+    externalId = externalId,
+    favorited = favorited,
+    updatedAt = updatedAt,
     deviceId = deviceId ?: "",
 )

@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Close
@@ -98,6 +99,7 @@ private fun SortMode.label(): String = when (this) {
 private fun LibraryFilter.label(): String = when (this) {
     LibraryFilter.SHOW_ALL -> stringResource(Res.string.filter_show_all)
     LibraryFilter.SHOW_IN_PROGRESS -> stringResource(Res.string.filter_show_in_progress)
+    LibraryFilter.SHOW_FAVORITES -> stringResource(Res.string.filter_show_favorites)
     LibraryFilter.HIDE_READ -> stringResource(Res.string.filter_hide_read)
     LibraryFilter.HIDE_MATCHED -> stringResource(Res.string.filter_hide_matched)
 }
@@ -127,6 +129,7 @@ fun MangaShelfGrid(
     ascending: Boolean,
     filter: LibraryFilter,
     inProgress: List<LibraryCard>,
+    favorites: List<LibraryCard>,
     resumeChapters: Map<String, ChapterCard>,
     recentChapters: List<RecentChapterCard>,
     titleLanguage: TitleLanguage,
@@ -172,7 +175,7 @@ fun MangaShelfGrid(
             selectionMode, selectedIds.size, onSelectAll, onSelectNone, onMarkRead, onMarkUnread, onExitSelectionMode, archivo, anton,
         )
         if (activeTab == LibraryTab.YOUR_PAGE) {
-            YourPageContent(inProgress, resumeChapters, recentChapters, titleLanguage, onSeriesClick, onChapterClick, yourPageListState)
+            YourPageContent(inProgress, favorites, resumeChapters, recentChapters, titleLanguage, onSeriesClick, onChapterClick, yourPageListState)
         } else {
             if (needsReGrant) ShelfReGrantBanner(onAddSource, archivo)
             when {
@@ -181,14 +184,23 @@ fun MangaShelfGrid(
                         Text(stringResource(Res.string.shelf_add_source), fontFamily = archivo, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
-                cards.isEmpty() && progress == null && query.isBlank() && !needsReGrant ->
+                // Truly empty library -- nothing scanned yet, and no filter/search is narrowing
+                // anything (SHOW_ALL + blank query), so there's nothing a toolbar could help
+                // the user change. A filter/search that narrows an otherwise-populated library
+                // to zero results is a different case (below) -- it must keep the toolbar
+                // reachable, or the user has no way back to "Show all".
+                cards.isEmpty() && progress == null && query.isBlank() && filter == LibraryFilter.SHOW_ALL && !needsReGrant ->
                     ShelfEmptyState(stringResource(Res.string.shelf_empty_no_series), archivo)
                 else -> {
                     // Always rendered, even in selection mode -- hiding it used to shift every
                     // cover up by its height the instant a long-press entered selection mode.
                     ShelfToolbar(viewModel, query, sort, ascending, filter, archivo)
                     ShelfHeaderRow(filter, cards.size, archivo, anton)
-                    ShelfGrid(shelfGridState, cards, titleLanguage, selectionMode, selectedIds, onSeriesClick, onLongClickSeries, archivo, anton)
+                    if (cards.isEmpty() && progress == null) {
+                        ShelfEmptyState(stringResource(Res.string.shelf_empty_no_matches), archivo, modifier = Modifier.weight(1f).fillMaxWidth())
+                    } else {
+                        ShelfGrid(shelfGridState, cards, titleLanguage, selectionMode, selectedIds, onSeriesClick, onLongClickSeries, archivo, anton)
+                    }
                 }
             }
         }
@@ -350,8 +362,8 @@ private fun ShelfReGrantBanner(onReconnect: () -> Unit, archivo: FontFamily) {
 }
 
 @Composable
-private fun ShelfEmptyState(text: String, archivo: FontFamily, action: (@Composable () -> Unit)? = null) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+private fun ShelfEmptyState(text: String, archivo: FontFamily, modifier: Modifier = Modifier.fillMaxSize(), action: (@Composable () -> Unit)? = null) {
+    Box(modifier, contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text, color = MangaColors.TextMuted, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
@@ -549,15 +561,27 @@ private fun ShelfCard(
                         .padding(horizontal = 34.dp, vertical = 3.dp),
                 )
             }
-            if (selectionMode) {
-                ShelfSelectionBadge(selected, Modifier.align(Alignment.TopEnd).padding(9.dp))
-            } else {
-                Text(
-                    "$readCount/${c.chapterCount}", color = Color.White, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 10.sp,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(9.dp)
-                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 8.dp, vertical = 3.dp),
-                )
+            Column(
+                Modifier.align(Alignment.TopEnd).padding(9.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                if (selectionMode) {
+                    ShelfSelectionBadge(selected)
+                } else {
+                    Text(
+                        "$readCount/${c.chapterCount}", color = Color.White, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 10.sp,
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
+                if (c.favorite) {
+                    Icon(
+                        Icons.Filled.Favorite, contentDescription = stringResource(Res.string.favorite_badge),
+                        tint = MangaColors.Accent, modifier = Modifier.size(18.dp),
+                    )
+                }
             }
             MetadataStatusOverlay(c, Modifier.align(Alignment.BottomEnd).padding(bottom = 10.dp, end = 6.dp), size = 18.dp)
             Text(

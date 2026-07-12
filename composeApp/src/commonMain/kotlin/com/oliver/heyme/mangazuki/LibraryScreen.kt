@@ -68,6 +68,7 @@ fun LibraryScreen(
     val ascending by viewModel.ascending.collectAsState()
     val filter by viewModel.filter.collectAsState()
     val inProgress by viewModel.inProgress.collectAsState()
+    val favorites by viewModel.favorites.collectAsState()
     val resumeChapters by viewModel.resumeChapters.collectAsState()
     val recentChapters by viewModel.recentChapters.collectAsState()
     val selectionMode by viewModel.selectionMode.collectAsState()
@@ -114,6 +115,7 @@ fun LibraryScreen(
         ascending = ascending,
         filter = filter,
         inProgress = inProgress,
+        favorites = favorites,
         resumeChapters = resumeChapters,
         recentChapters = recentChapters,
         titleLanguage = titleLanguage,

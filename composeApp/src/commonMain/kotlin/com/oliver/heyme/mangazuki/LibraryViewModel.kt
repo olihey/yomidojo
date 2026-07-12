@@ -47,8 +47,9 @@ enum class SortMode { NAME, RECENTLY_ADDED, RECENTLY_READ, RELEASE_START }
 /** Library filter (PLAN.md §7.1): "Hide matched" is the AniList-match counterpart of "Hide
  * read" — hides series that already have an `external_id`, for focusing on what Fix Metadata
  * still needs to look at (PLAN.md §9.1). "Show in progress" narrows to partially-read series —
- * the same definition the "Your Page" dashboard's [LibraryViewModel.inProgress] uses. */
-enum class LibraryFilter { SHOW_ALL, SHOW_IN_PROGRESS, HIDE_READ, HIDE_MATCHED }
+ * the same definition the "Your Page" dashboard's [LibraryViewModel.inProgress] uses. "Show
+ * favorites" narrows to hearted series (PLAN.md §10 favorites). */
+enum class LibraryFilter { SHOW_ALL, SHOW_IN_PROGRESS, SHOW_FAVORITES, HIDE_READ, HIDE_MATCHED }
 
 class LibraryViewModel(
     private val repository: LibraryRepository,
@@ -122,6 +123,7 @@ class LibraryViewModel(
                     LibraryFilter.SHOW_ALL -> {}
                     // Same "partially read" definition as [inProgress] (Your Page's feed).
                     LibraryFilter.SHOW_IN_PROGRESS -> list = list.filter { it.isInProgress }
+                    LibraryFilter.SHOW_FAVORITES -> list = list.filter { it.favorite }
                     LibraryFilter.HIDE_READ -> list = list.filter { it.unreadCount > 0 }
                     LibraryFilter.HIDE_MATCHED -> list = list.filter { it.externalId == null }
                 }
@@ -146,6 +148,13 @@ class LibraryViewModel(
     val inProgress: StateFlow<List<LibraryCard>> = allCards.map { list ->
         list.filter { it.isInProgress }
             .sortedByDescending { it.latestRead ?: 0L }
+    }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Hearted series, most-recently-hearted first -- the "Your Page" dashboard's Favorites
+     * shelf (PLAN.md §10 favorites), independent of the Library tab's filter state. */
+    val favorites: StateFlow<List<LibraryCard>> = allCards.map { list ->
+        list.filter { it.favorite }
+            .sortedByDescending { it.favoriteUpdatedAt ?: 0L }
     }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** Most-recently-added chapters across the whole library -- the dashboard's "Fresh chapters"

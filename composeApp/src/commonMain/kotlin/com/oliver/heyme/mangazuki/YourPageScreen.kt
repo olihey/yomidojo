@@ -59,6 +59,7 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 fun YourPageContent(
     inProgress: List<LibraryCard>,
+    favorites: List<LibraryCard>,
     resumeChapters: Map<String, ChapterCard>,
     recentChapters: List<RecentChapterCard>,
     titleLanguage: TitleLanguage,
@@ -118,10 +119,11 @@ fun YourPageContent(
         // Drop the ones already shown above -- "on your shelf" is the rest of what's in progress,
         // not a second copy of "jump back in".
         val shelf = inProgress.drop(jumpBackIn.size).take(coverGridCount)
+        val hearted = favorites.take(coverGridCount)
         val fresh = recentChapters.take(coverGridCount)
         val newSince = remember { nowEpochMillis() - 24 * 60 * 60 * 1000L }
 
-        if (jumpBackIn.isEmpty() && fresh.isEmpty()) {
+        if (jumpBackIn.isEmpty() && fresh.isEmpty() && hearted.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     stringResource(Res.string.your_page_empty_state),
@@ -149,6 +151,15 @@ fun YourPageContent(
                 item {
                     YourPageSection(stringResource(Res.string.your_page_shelf_title), stringResource(Res.string.your_page_shelf_subtitle), archivo, anton) {
                         ChunkedGrid(shelf, columns = coverGridColumns, spacing = coverGridSpacing) { card ->
+                            ShelfMiniCard(card, titleLanguage, onClick = { onSeriesClick(card.id) }, archivo, anton)
+                        }
+                    }
+                }
+            }
+            if (hearted.isNotEmpty()) {
+                item {
+                    YourPageSection(stringResource(Res.string.your_page_favorites_title), stringResource(Res.string.your_page_favorites_subtitle), archivo, anton) {
+                        ChunkedGrid(hearted, columns = coverGridColumns, spacing = coverGridSpacing) { card ->
                             ShelfMiniCard(card, titleLanguage, onClick = { onSeriesClick(card.id) }, archivo, anton)
                         }
                     }

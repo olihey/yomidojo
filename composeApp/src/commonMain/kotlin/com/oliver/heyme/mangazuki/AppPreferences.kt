@@ -122,6 +122,28 @@ class AppPreferences(private val settings: Settings) {
         settings.putLong(KEY_LAST_SYNCED_AT, now)
     }
 
+    /** Settings' "Sync favorites" sub-toggle (PLAN.md §10) -- same call-site-decides pattern as
+     * [metadataAliasSyncEnabled]: off means the caller swaps in `NoOpFavoritesBackend`, so
+     * `favorites.json` is never pulled/pushed while local hearts keep working. */
+    private val _favoriteSyncEnabled = MutableStateFlow(settings.getBoolean(KEY_FAVORITE_SYNC_ENABLED, true))
+    val favoriteSyncEnabled: StateFlow<Boolean> = _favoriteSyncEnabled
+
+    fun setFavoriteSyncEnabled(enabled: Boolean) {
+        _favoriteSyncEnabled.value = enabled
+        settings.putBoolean(KEY_FAVORITE_SYNC_ENABLED, enabled)
+    }
+
+    /** When `favorites.json` last actually pulled/pushed -- same semantics as
+     * [lastMetadataAliasSyncedAt], for the "Sync favorites" switch's byline. */
+    private val _lastFavoriteSyncedAt = MutableStateFlow(settings.getLongOrNull(KEY_LAST_FAVORITE_SYNCED_AT))
+    val lastFavoriteSyncedAt: StateFlow<Long?> = _lastFavoriteSyncedAt
+
+    fun recordFavoriteSyncCompleted() {
+        val now = nowEpochMillis()
+        _lastFavoriteSyncedAt.value = now
+        settings.putLong(KEY_LAST_FAVORITE_SYNCED_AT, now)
+    }
+
     /** Whether the periodic (every-6h) `SyncWorker` WorkManager job should be scheduled at all
      * (PLAN.md §10) -- independent of [syncEnabled], which pauses sync entirely. Turning this
      * off doesn't stop syncing outright: the sign-in trigger and the debounced
@@ -148,5 +170,7 @@ class AppPreferences(private val settings: Settings) {
         const val KEY_BACKGROUND_SYNC_ENABLED = "app.backgroundSyncEnabled"
         const val KEY_METADATA_ALIAS_SYNC_ENABLED = "app.metadataAliasSyncEnabled"
         const val KEY_LAST_METADATA_ALIAS_SYNCED_AT = "app.lastMetadataAliasSyncedAt"
+        const val KEY_FAVORITE_SYNC_ENABLED = "app.favoriteSyncEnabled"
+        const val KEY_LAST_FAVORITE_SYNCED_AT = "app.lastFavoriteSyncedAt"
     }
 }

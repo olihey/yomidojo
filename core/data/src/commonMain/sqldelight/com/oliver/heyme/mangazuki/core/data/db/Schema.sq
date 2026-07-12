@@ -33,7 +33,12 @@ CREATE TABLE series (
   average_score      INTEGER,            -- 0-100, null if AniList has too few ratings
   site_url           TEXT,               -- link to the series' AniList page
   banner_path        TEXT,               -- app-internal storage path for the banner image (§9)
-  metadata_provider  TEXT                -- which provider matched this series: ANILIST | KITSU (§9.3)
+  metadata_provider  TEXT,               -- which provider matched this series: ANILIST | KITSU (§9.3)
+  favorite           INTEGER NOT NULL DEFAULT 0, -- user's heart toggle (§10 favorites sync)
+  favorite_updated_at INTEGER,           -- LWW timestamp; NULL = never touched, nothing to sync.
+                                         -- An un-favorite keeps a fresh timestamp (favorite = 0)
+                                         -- so it wins merges -- same lesson as progress v3 (§10).
+  favorite_device_id TEXT
 );
 
 CREATE TABLE chapter (
@@ -155,6 +160,7 @@ selectLibrary:
 SELECT
   s.id, s.title, s.sort_title, s.author, s.cover_path, s.start_year, s.status, s.date_added,
   s.external_id, s.metadata_checked_at, s.title_romaji, s.title_english, s.title_native,
+  s.favorite, s.favorite_updated_at,
   COUNT(DISTINCT c.id) AS chapter_count,
   COUNT(DISTINCT CASE WHEN p.completed = 1 THEN c.id END) AS read_count,
   -- Mid-read chapters (some pages, not completed) -- what makes a series "in progress" even
@@ -274,15 +280,21 @@ ON CONFLICT(chapter_id) DO UPDATE SET
 -- corresponds to, if this device has scanned that file. Primary path -- the matched-provider
 -- identity ("IS ?" rather than "= ?" so a NULL volume/number, common for a flat chapter list,
 -- still matches instead of every comparison going unknown).
+-- LIMIT 1: several local series can legitimately resolve to one sync key (two scanned folders
+-- matched to the same AniList entry, or sharing a normalized title), which made
+-- executeAsOneOrNull throw "more than 1 row" and abort the whole sync pass. Any one of the
+-- duplicates is a correct apply target -- they're the same work.
 selectChapterIdByProviderKey:
 SELECT c.id FROM chapter c JOIN series s ON s.id = c.series_id
 WHERE s.metadata_provider = :provider AND s.external_id = :externalId
-  AND c.volume IS :volume AND c.number IS :number;
+  AND c.volume IS :volume AND c.number IS :number
+LIMIT 1;
 
 -- Fallback path: the frozen normalized title (already `sort_title`, case 3 of the design).
 selectChapterIdByTitleKey:
 SELECT c.id FROM chapter c JOIN series s ON s.id = c.series_id
-WHERE s.sort_title = :normalizedTitle AND c.volume IS :volume AND c.number IS :number;
+WHERE s.sort_title = :normalizedTitle AND c.volume IS :volume AND c.number IS :number
+LIMIT 1;
 
 -- The one column needed to guard against a stale synced record clobbering a fresher local
 -- write (PLAN.md §10) -- done as a Kotlin-side read-then-conditional-write rather than a SQL
@@ -316,3 +328,30 @@ ON CONFLICT(normalized_old_title) DO UPDATE SET
 -- an alias sync pass, pushed alongside whatever the merge with remote resolves to.
 selectAllMetadataAliases:
 SELECT normalized_old_title, provider, external_id, updated_at, device_id FROM metadata_alias;
+
+-- Favorites (PLAN.md §10 favorites sync) ------------------------------------
+-- The user's heart toggle. Always a fresh local write (like recordMetadataAlias), so no
+-- "newer wins" guard here -- that guard lives in applyFavoriteIfNewer for synced records.
+setFavorite:
+UPDATE series SET favorite = ?, favorite_updated_at = ?, favorite_device_id = ? WHERE id = ?;
+
+-- Every series whose heart was ever touched, with its sync identity attached -- the local half
+-- of a favorites sync pass. favorite = 0 rows are deliberately included: an un-favorite is an
+-- explicit tombstone that must sync (progress v3 lesson, §10).
+selectAllFavoritesForSync:
+SELECT sort_title, metadata_provider, external_id, favorite, favorite_updated_at, favorite_device_id
+FROM series WHERE favorite_updated_at IS NOT NULL;
+
+-- Resolve a synced favorite's key back to the local series -- same provider-first/title-fallback
+-- pattern as selectChapterIdByProviderKey/selectChapterIdByTitleKey above, just series-scoped
+-- (including the same LIMIT 1 duplicate-match guard).
+selectSeriesIdByProviderKey:
+SELECT id FROM series WHERE metadata_provider = :provider AND external_id = :externalId LIMIT 1;
+
+selectSeriesIdByTitleKey:
+SELECT id FROM series WHERE sort_title = :normalizedTitle LIMIT 1;
+
+-- LWW guard read for applyFavoriteIfNewer (same Kotlin-side read-then-conditional-write
+-- reasoning as selectProgressUpdatedAt).
+selectFavoriteUpdatedAt:
+SELECT favorite_updated_at FROM series WHERE id = ?;

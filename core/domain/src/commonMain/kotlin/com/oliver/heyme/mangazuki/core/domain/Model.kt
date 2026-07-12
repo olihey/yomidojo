@@ -48,6 +48,7 @@ data class Series(
     val siteUrl: String? = null,
     val bannerPath: String? = null,    // app-internal storage path for the downloaded banner
     val metadataProvider: String? = null, // which provider matched this: ANILIST | KITSU (§9.3)
+    val favorite: Boolean = false,     // user's heart toggle (PLAN.md §10 favorites sync)
 )
 
 data class Chapter(
@@ -102,6 +103,20 @@ data class MetadataAliasRow(
     val normalizedOldTitle: String,
     val provider: String,
     val externalId: String,
+    val updatedAt: Long,
+    val deviceId: String?,
+)
+
+/** One series' favorite state plus its cross-device sync identity (PLAN.md §10 favorites
+ * sync). [favorited] false rows exist and sync too -- an un-favorite is an explicit
+ * tombstone with its own [updatedAt], not record absence (the progress-v3 lesson), so it can
+ * win a merge against an older remote favorite. Plain-primitive-typed for the same
+ * `core:data`/`core:sync` layering reason as [SyncProgressRow]. */
+data class FavoriteRow(
+    val normalizedTitle: String,  // series.sort_title (frozen normalization, §10)
+    val provider: String?,        // series.metadata_provider: "ANILIST" | "KITSU" | null
+    val externalId: String?,      // series.external_id
+    val favorited: Boolean,
     val updatedAt: Long,
     val deviceId: String?,
 )

@@ -76,6 +76,7 @@ fun SeriesScreen(
             selectionMode = selectionMode,
             selectedIds = selectedIds,
             onChapterClick = { id -> if (selectionMode) viewModel.toggleSelected(id) else onChapterClick(id) },
+            onToggleFavorite = viewModel::toggleFavorite,
             onFixMetadata = viewModel::openMetadataSearch,
             onLongClickChapter = { id -> if (!selectionMode) viewModel.enterSelectionMode(id) },
             onSelectAll = viewModel::selectAll,

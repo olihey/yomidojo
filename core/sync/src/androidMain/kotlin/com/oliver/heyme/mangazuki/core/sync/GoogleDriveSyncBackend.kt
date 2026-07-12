@@ -25,6 +25,10 @@ private const val DRIVE_FILES_ENDPOINT = "https://www.googleapis.com/drive/v3/fi
 private const val DRIVE_UPLOAD_ENDPOINT = "https://www.googleapis.com/upload/drive/v3/files"
 private const val PROGRESS_FILE_NAME = "progress.json"
 private const val METADATA_ALIAS_FILE_NAME = "metadata_aliases.json"
+private const val FAVORITES_FILE_NAME = "favorites.json"
+// favorites.json has its own version counter (v1, 2026-07-12) -- it didn't exist through
+// progress.json's v1-v3 evolution, so inheriting WIRE_FORMAT_VERSION would fake a history.
+private const val FAVORITES_WIRE_FORMAT_VERSION = 1
 // v2 (2026-07-05): one record per SERIES with completed/in-progress chapter lists, replacing
 // v1's one record per chapter -- a v1 remote file just deserializes as "no series yet" (the new
 // `series` field defaults to empty, and the old `records` field is silently ignored), so each
@@ -53,9 +57,10 @@ private val debugJsonParser = Json { ignoreUnknownKeys = true }
  * `AniListMetadataProvider`/`KitsuMetadataProvider` talk to their own APIs. `appDataFolder` is
  * a hidden per-app bucket inside the user's own Drive -- invisible in their normal Drive UI.
  *
- * Implements both [SyncBackend] (`progress.json`) and [MetadataAliasBackend]
- * (`metadata_aliases.json`) -- same auth/HTTP plumbing, just a different file name and DTO, so
- * one instance (shared between both `ProgressSyncCoordinator` constructor params) is enough.
+ * Implements [SyncBackend] (`progress.json`), [MetadataAliasBackend]
+ * (`metadata_aliases.json`), and [FavoritesBackend] (`favorites.json`) -- same auth/HTTP
+ * plumbing, just a different file name and DTO each, so one instance (shared between the
+ * `ProgressSyncCoordinator` constructor params) is enough.
  */
 class GoogleDriveSyncBackend(
     private val auth: GoogleAuthManager,
@@ -63,7 +68,7 @@ class GoogleDriveSyncBackend(
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         expectSuccess = false
     },
-) : SyncBackend, MetadataAliasBackend {
+) : SyncBackend, MetadataAliasBackend, FavoritesBackend {
 
     override suspend fun pull(since: SyncCursor?): List<SeriesProgressRecord> {
         val token = auth.accessToken() ?: return emptyList()
@@ -94,6 +99,19 @@ class GoogleDriveSyncBackend(
         upsertFile(token, METADATA_ALIAS_FILE_NAME, AliasFileDto(WIRE_FORMAT_VERSION, aliases.map { it.toDto() }))
     }
 
+    override suspend fun pullFavorites(): List<FavoriteRecord> {
+        val token = auth.accessToken() ?: return emptyList()
+        val fileId = findFileId(token, FAVORITES_FILE_NAME) ?: return emptyList()
+        val response = getFile(token, fileId)
+        if (!response.status.isSuccess()) return emptyList()
+        return response.body<FavoritesFileDto>().records.map { it.toFavoriteRecord() }
+    }
+
+    override suspend fun pushFavorites(favorites: List<FavoriteRecord>) {
+        val token = auth.accessToken() ?: error("Google Drive sync: not signed in")
+        upsertFile(token, FAVORITES_FILE_NAME, FavoritesFileDto(FAVORITES_WIRE_FORMAT_VERSION, favorites.map { it.toDto() }))
+    }
+
     /** Settings' Debug section (PLAN.md §10) -- fetches a file's raw content as-is from Drive,
      * since `appDataFolder` can't be browsed any other way. Reuses [findFileId]/[getFile] rather
      * than [pull]/[pullAliases] so this shows exactly what's on Drive, not the
@@ -108,6 +126,11 @@ class GoogleDriveSyncBackend(
         return fetchRawFile(token, METADATA_ALIAS_FILE_NAME)
     }
 
+    suspend fun fetchRawFavoritesJson(): String? {
+        val token = auth.accessToken() ?: return null
+        return fetchRawFile(token, FAVORITES_FILE_NAME)
+    }
+
     /** Settings' Debug section "Clear" actions (PLAN.md §10) -- overwrites the Drive copy with
      * an empty file via the existing full-snapshot [push]/[pushAliases], rather than deleting it
      * outright, so there's no separate delete-vs-recreate path to reason about; the next sync
@@ -118,6 +141,10 @@ class GoogleDriveSyncBackend(
 
     suspend fun clearMetadataAliases() {
         pushAliases(emptyList())
+    }
+
+    suspend fun clearFavorites() {
+        pushFavorites(emptyList())
     }
 
     /** Settings' Debug section "Import" actions (PLAN.md §10) -- overwrites the Drive copy with
@@ -136,6 +163,12 @@ class GoogleDriveSyncBackend(
         val token = auth.accessToken() ?: error("Google Drive sync: not signed in")
         debugJsonParser.decodeFromString<AliasFileDto>(json)
         upsertFileRaw(token, METADATA_ALIAS_FILE_NAME, json)
+    }
+
+    suspend fun pushRawFavoritesJson(json: String) {
+        val token = auth.accessToken() ?: error("Google Drive sync: not signed in")
+        debugJsonParser.decodeFromString<FavoritesFileDto>(json)
+        upsertFileRaw(token, FAVORITES_FILE_NAME, json)
     }
 
     private suspend fun fetchRawFile(token: String, fileName: String): String? {
@@ -240,6 +273,19 @@ private data class SeriesRecordDto(
 private data class AliasFileDto(val version: Int, val records: List<AliasRecordDto>)
 
 @Serializable
+private data class FavoritesFileDto(val version: Int, val records: List<FavoriteRecordDto> = emptyList())
+
+@Serializable
+private data class FavoriteRecordDto(
+    val normalizedTitle: String,
+    val provider: String? = null,
+    val externalId: String? = null,
+    val favorited: Boolean,
+    val updatedAt: Long,
+    val deviceId: String,
+)
+
+@Serializable
 private data class AliasRecordDto(
     val normalizedTitle: String,
     val provider: String,
@@ -282,3 +328,7 @@ private fun SeriesRecordDto.toSeriesProgressRecord() = SeriesProgressRecord(
 private fun MetadataAliasRecord.toDto() = AliasRecordDto(normalizedTitle, provider, externalId, updatedAt, deviceId)
 
 private fun AliasRecordDto.toAliasRecord() = MetadataAliasRecord(normalizedTitle, provider, externalId, updatedAt, deviceId)
+
+private fun FavoriteRecord.toDto() = FavoriteRecordDto(normalizedTitle, provider, externalId, favorited, updatedAt, deviceId)
+
+private fun FavoriteRecordDto.toFavoriteRecord() = FavoriteRecord(normalizedTitle, provider, externalId, favorited, updatedAt, deviceId)

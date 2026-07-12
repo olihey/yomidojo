@@ -33,6 +33,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
@@ -91,6 +93,7 @@ fun MangaDetailScreen(
     selectionMode: Boolean,
     selectedIds: Set<String>,
     onChapterClick: (String) -> Unit,
+    onToggleFavorite: () -> Unit,
     onFixMetadata: () -> Unit,
     onLongClickChapter: (String) -> Unit,
     onSelectAll: () -> Unit,
@@ -187,14 +190,16 @@ fun MangaDetailScreen(
                 }
             }
         }
-        DetailTopBar(onBack, onFixMetadata, archivo)
+        DetailTopBar(onBack, series.favorite, onToggleFavorite, onFixMetadata, archivo)
     }
 }
 
 /** Floats over the banner, same as the design's back pill + action buttons -- not part of the
- * scrolling content, so it stays reachable the whole time. */
+ * scrolling content, so it stays reachable the whole time. The heart toggles the series'
+ * favorite state (PLAN.md §10 favorites): filled accent heart when favorited, outlined white
+ * one otherwise -- the upper-right corner over the cover/banner art. */
 @Composable
-private fun DetailTopBar(onBack: () -> Unit, onFixMetadata: () -> Unit, archivo: FontFamily) {
+private fun DetailTopBar(onBack: () -> Unit, favorite: Boolean, onToggleFavorite: () -> Unit, onFixMetadata: () -> Unit, archivo: FontFamily) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -209,7 +214,15 @@ private fun DetailTopBar(onBack: () -> Unit, onFixMetadata: () -> Unit, archivo:
             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.content_desc_back_to_library), tint = Color.White, modifier = Modifier.size(17.dp))
             Text(stringResource(Res.string.detail_library_button), color = Color.White, fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
-        ShelfIconButton(onClick = onFixMetadata, icon = Icons.Default.Build, background = Color.Black.copy(alpha = 0.4f), tint = Color.White)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ShelfIconButton(
+                onClick = onToggleFavorite,
+                icon = if (favorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                background = Color.Black.copy(alpha = 0.4f),
+                tint = if (favorite) MangaColors.Accent else Color.White,
+            )
+            ShelfIconButton(onClick = onFixMetadata, icon = Icons.Default.Build, background = Color.Black.copy(alpha = 0.4f), tint = Color.White)
+        }
     }
 }
 

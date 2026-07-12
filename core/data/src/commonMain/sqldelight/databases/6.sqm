@@ -1,0 +1,7 @@
+-- v6 -> v7: favorite series (PLAN.md §10 favorites sync). favorite_updated_at is the LWW
+-- timestamp; NULL means the user never touched the heart, so there's nothing to sync. An
+-- un-favorite keeps favorite = 0 with a fresh timestamp so it can win a merge against an older
+-- remote favorite -- the same explicit-tombstone lesson progress sync learned in v3.
+ALTER TABLE series ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE series ADD COLUMN favorite_updated_at INTEGER;
+ALTER TABLE series ADD COLUMN favorite_device_id TEXT;

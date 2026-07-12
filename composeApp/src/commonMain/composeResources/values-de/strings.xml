@@ -63,6 +63,7 @@
     <string name="shelf_add_source">Ordner auswählen</string>
     <string name="shelf_empty_no_source">Noch keine Bibliotheksquelle eingerichtet.</string>
     <string name="shelf_empty_no_series">In dieser Bibliothek wurden noch keine Serien gefunden.</string>
+    <string name="shelf_empty_no_matches">Keine Serien entsprechen diesem Filter oder dieser Suche.</string>
     <string name="masthead_selected_label">Ausgewählt</string>
     <plurals name="selection_title_count">
         <item quantity="one">%1$d Titel</item>
@@ -96,8 +97,9 @@
     <string name="sort_release_start">Erscheinungsbeginn</string>
     <string name="filter_show_all">Alle anzeigen</string>
     <string name="filter_show_in_progress">Angefangene anzeigen</string>
-    <string name="filter_hide_read">Gelesene ausblenden</string>
-    <string name="filter_hide_matched">Zugeordnete ausblenden</string>
+    <string name="filter_show_favorites">Favoriten anzeigen</string>
+    <string name="filter_hide_read">Ungelesene anzeigen</string>
+    <string name="filter_hide_matched">Ohne Zuordnung anzeigen</string>
 
     <!-- SeriesScreen.kt: FixMetadataDialog -->
     <string name="fix_metadata_dialog_title">Metadaten korrigieren</string>
@@ -125,6 +127,7 @@
     </plurals>
     <string name="chapter_tile_up_next">ALS NÄCHSTES</string>
     <string name="content_desc_chapter_read">Gelesen</string>
+    <string name="favorite_badge">Favorit</string>
 
     <!-- YourPageScreen.kt -->
     <string name="your_page_empty_state">Hier ist noch nichts -- lies ein, zwei Kapitel oder scanne deine Bibliothek, dann füllt sich das.</string>
@@ -132,6 +135,8 @@
     <string name="your_page_jump_back_in_subtitle">Kürzlich gelesen</string>
     <string name="your_page_shelf_title">IN DEINEM REGAL</string>
     <string name="your_page_shelf_subtitle">Angefangen</string>
+    <string name="your_page_favorites_title">FAVORITEN</string>
+    <string name="your_page_favorites_subtitle">Deine Herzen</string>
     <string name="your_page_fresh_title">NEUE KAPITEL</string>
     <string name="your_page_fresh_subtitle">Kürzlich hinzugefügt</string>
     <string name="your_page_read_total">%1$d / %2$d GELESEN</string>
@@ -201,6 +206,8 @@
     <string name="settings_sync_progress_subtitle">Pausiert die Synchronisierung, ohne dich abzumelden</string>
     <string name="settings_sync_metadata_title">Korrigierte Metadaten synchronisieren</string>
     <string name="settings_sync_metadata_subtitle">Teilt Treffer von Metadaten korrigieren zwischen deinen Geräten, damit der Lesefortschritt korrekt übereinstimmt</string>
+    <string name="settings_sync_favorites_title">Favoriten synchronisieren</string>
+    <string name="settings_sync_favorites_subtitle">Hält deine Favoriten auf allen Geräten synchron</string>
     <string name="settings_sync_background_title">Im Hintergrund synchronisieren</string>
     <string name="settings_sync_background_subtitle">Aus: synchronisiert nur, während die App geöffnet ist — keine geplante Akku-/Netzwerknutzung</string>
     <string name="settings_sync_last_synced">Zuletzt synchronisiert: %1$s</string>
@@ -210,8 +217,10 @@
     <string name="settings_section_debug_desc">Die Rohdateien einsehen, löschen, exportieren oder importieren, die dieses Gerät über Google Drive synchronisiert.</string>
     <string name="settings_debug_view_progress">progress.json anzeigen</string>
     <string name="settings_debug_view_metadata_aliases">metadata_aliases.json anzeigen</string>
+    <string name="settings_debug_view_favorites">favorites.json anzeigen</string>
     <string name="settings_debug_clear_progress">progress.json löschen</string>
     <string name="settings_debug_clear_metadata_aliases">metadata_aliases.json löschen</string>
+    <string name="settings_debug_clear_favorites">favorites.json löschen</string>
     <string name="settings_reset_library_title">Bibliothek zurücksetzen</string>
     <string name="settings_reset_library_desc">Vergisst die eingerichtete Quelle und löscht jede gescannte Serie, jedes Kapitel und jede Fortschrittszeile sowie alle zwischengespeicherten Cover-/Banner-Dateien. Kann nicht rückgängig gemacht werden.</string>
     <string name="settings_reset_confirm_title">Bibliothek zurücksetzen?</string>
@@ -224,8 +233,10 @@
     <string name="settings_debug_clear_action">Löschen</string>
     <string name="settings_debug_export_progress">progress.json exportieren</string>
     <string name="settings_debug_export_metadata_aliases">metadata_aliases.json exportieren</string>
+    <string name="settings_debug_export_favorites">favorites.json exportieren</string>
     <string name="settings_debug_import_progress">progress.json importieren</string>
     <string name="settings_debug_import_metadata_aliases">metadata_aliases.json importieren</string>
+    <string name="settings_debug_import_favorites">favorites.json importieren</string>
     <string name="settings_debug_import_confirm_title">%1$s importieren?</string>
     <string name="settings_debug_import_confirm_body">Überschreibt die Kopie auf Drive mit dem Inhalt der ausgewählten Datei. Andere Geräte gleichen sich bei ihrer nächsten Synchronisierung mit dieser Datei ab.</string>
     <string name="settings_debug_import_action">Importieren</string>

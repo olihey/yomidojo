@@ -140,7 +140,10 @@ CREATE TABLE series (
   is_adult           INTEGER,            -- 0/1
   average_score      INTEGER,            -- 0-100, null if not enough ratings
   site_url           TEXT,               -- AniList page for the match
-  banner_path        TEXT                -- wide banner, cached like cover_path; often null (§9)
+  banner_path        TEXT,               -- wide banner, cached like cover_path; often null (§9)
+  favorite           INTEGER NOT NULL DEFAULT 0, -- heart toggle (§10 favorites, 6.sqm)
+  favorite_updated_at INTEGER,           -- LWW timestamp; NULL = never touched
+  favorite_device_id TEXT
 );
 
 CREATE TABLE chapter (
@@ -1743,6 +1746,26 @@ per-file ones, since the SAF plumbing itself doesn't care which file it's saving
 pair is registered in `MainActivity` and shared by both files, bridged from the
 `ActivityResultLauncher` callback style into `AppGraph`'s suspend-callback style via a single
 in-flight `CancellableContinuation<Uri?>` each (only one such dialog can be on screen at a time).
+
+**Favorite series + `favorites.json` (2026-07-12).** A heart toggle on the series screen's
+fixed top bar (accent-filled when on), a heart badge on library-grid covers under the read/total
+badge, a "Show favorites" library filter, and a Favorites shelf on Your Page (most-recently
+-hearted first). Synced as a **third Drive file, `favorites.json` (own wire version, v1)** —
+`FavoritesBackend`/`FavoriteRecord`/`resolveFavoriteWinners` in `core:sync` mirror the
+metadata-alias trio exactly: one record per series keyed by the device-independent identity
+(`normalizedTitle` always, `provider`/`externalId` when matched), merged by plain title-grouped
+LWW with the deviceId tiebreak. **An un-favorite is an explicit tombstone** (`favorited: false`
+with its own `updatedAt`), not record absence — the v3 un-read lesson applied from day one, so
+removing a heart reliably survives a merge against another device's stale heart. Local storage
+is three columns on `series` (`favorite`, `favorite_updated_at`, `favorite_device_id`; migration
+`6.sqm`, v6→v7) rather than a separate table: trivial `selectLibrary` join, and Drive is the
+resilient store across prunes/resets — same recovery story as reading progress (reset →
+rescan → next sync re-applies via `resolveLocalSeriesId`, the series-scoped twin of
+`resolveLocalChapterId`; a record for a series a device hasn't scanned round-trips through push
+untouched). `upsertSeries`'s ON CONFLICT leaves the favorite columns alone, so rescans preserve
+hearts. Settings grows a fourth Cloud-sync switch ("Sync favorites", own last-synced byline,
+`NoOpFavoritesBackend` substitution when off) and the Debug section gains the full
+view/clear/export/import row group for `favorites.json`.
 
 **`progress.json` v2 — one record per series, not per chapter (2026-07-05).** v1 wrote one
 `SyncRecordDto` object per chapter (`provider`/`externalId`/`normalizedTitle`/`volume`/`number`/

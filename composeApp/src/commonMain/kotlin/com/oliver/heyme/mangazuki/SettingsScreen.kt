@@ -125,12 +125,15 @@ fun SettingsScreen(
     onBackgroundSyncEnabledChanged: (Boolean) -> Unit = {},
     fetchProgressJson: suspend () -> String? = { null },
     fetchMetadataAliasesJson: suspend () -> String? = { null },
+    fetchFavoritesJson: suspend () -> String? = { null },
     clearProgressJson: suspend () -> Unit = {},
     clearMetadataAliasesJson: suspend () -> Unit = {},
+    clearFavoritesJson: suspend () -> Unit = {},
     exportJsonFile: suspend (fileName: String, content: String) -> Unit = { _, _ -> },
     pickJsonFile: suspend () -> String? = { null },
     importProgressJson: suspend (String) -> Unit = {},
     importMetadataAliasesJson: suspend (String) -> Unit = {},
+    importFavoritesJson: suspend (String) -> Unit = {},
     isDebugBuild: Boolean = false,
 ) {
     ImmersiveMode(enabled = true)
@@ -154,6 +157,8 @@ fun SettingsScreen(
     val lastSyncedAt by appPreferences.lastSyncedAt.collectAsState()
     val metadataAliasSyncEnabled by appPreferences.metadataAliasSyncEnabled.collectAsState()
     val lastMetadataAliasSyncedAt by appPreferences.lastMetadataAliasSyncedAt.collectAsState()
+    val favoriteSyncEnabled by appPreferences.favoriteSyncEnabled.collectAsState()
+    val lastFavoriteSyncedAt by appPreferences.lastFavoriteSyncedAt.collectAsState()
     val backgroundSyncEnabled by appPreferences.backgroundSyncEnabled.collectAsState()
     val sync by syncState.collectAsState()
 
@@ -243,6 +248,11 @@ fun SettingsScreen(
                                     byline = lastMetadataAliasSyncedAt?.let { stringResource(Res.string.settings_sync_last_synced, formatDateTime(it)) } ?: notSyncedYet,
                                 )
                                 SettingsSwitchRow(
+                                    stringResource(Res.string.settings_sync_favorites_title), stringResource(Res.string.settings_sync_favorites_subtitle),
+                                    checked = favoriteSyncEnabled, archivo, onCheckedChange = appPreferences::setFavoriteSyncEnabled,
+                                    byline = lastFavoriteSyncedAt?.let { stringResource(Res.string.settings_sync_last_synced, formatDateTime(it)) } ?: notSyncedYet,
+                                )
+                                SettingsSwitchRow(
                                     stringResource(Res.string.settings_sync_background_title), stringResource(Res.string.settings_sync_background_subtitle),
                                     checked = backgroundSyncEnabled, archivo, onCheckedChange = onBackgroundSyncEnabledChanged,
                                 )
@@ -276,8 +286,16 @@ fun SettingsScreen(
                                     coroutineScope.launch { viewJsonDialog = ViewJsonDialogState.Loaded(DebugFile.METADATA_ALIASES, fetchMetadataAliasesJson()) }
                                 },
                             )
+                            SettingsLink(
+                                stringResource(Res.string.settings_debug_view_favorites), archivo,
+                                onClick = {
+                                    viewJsonDialog = ViewJsonDialogState.Loading(DebugFile.FAVORITES)
+                                    coroutineScope.launch { viewJsonDialog = ViewJsonDialogState.Loaded(DebugFile.FAVORITES, fetchFavoritesJson()) }
+                                },
+                            )
                             SettingsLink(stringResource(Res.string.settings_debug_clear_progress), archivo, color = DangerColor, onClick = { clearTarget = DebugFile.PROGRESS })
                             SettingsLink(stringResource(Res.string.settings_debug_clear_metadata_aliases), archivo, color = DangerColor, onClick = { clearTarget = DebugFile.METADATA_ALIASES })
+                            SettingsLink(stringResource(Res.string.settings_debug_clear_favorites), archivo, color = DangerColor, onClick = { clearTarget = DebugFile.FAVORITES })
                             SettingsLink(
                                 stringResource(Res.string.settings_debug_export_progress), archivo,
                                 onClick = { coroutineScope.launch { fetchProgressJson()?.let { exportJsonFile(DebugFile.PROGRESS.fileName, it) } } },
@@ -293,6 +311,14 @@ fun SettingsScreen(
                             SettingsLink(
                                 stringResource(Res.string.settings_debug_import_metadata_aliases), archivo,
                                 onClick = { coroutineScope.launch { pickJsonFile()?.let { importTarget = PendingImport(DebugFile.METADATA_ALIASES, it) } } },
+                            )
+                            SettingsLink(
+                                stringResource(Res.string.settings_debug_export_favorites), archivo,
+                                onClick = { coroutineScope.launch { fetchFavoritesJson()?.let { exportJsonFile(DebugFile.FAVORITES.fileName, it) } } },
+                            )
+                            SettingsLink(
+                                stringResource(Res.string.settings_debug_import_favorites), archivo,
+                                onClick = { coroutineScope.launch { pickJsonFile()?.let { importTarget = PendingImport(DebugFile.FAVORITES, it) } } },
                             )
                         }
                     }
@@ -375,6 +401,7 @@ fun SettingsScreen(
                             when (target) {
                                 DebugFile.PROGRESS -> clearProgressJson()
                                 DebugFile.METADATA_ALIASES -> clearMetadataAliasesJson()
+                                DebugFile.FAVORITES -> clearFavoritesJson()
                             }
                         }
                     },
@@ -403,6 +430,7 @@ fun SettingsScreen(
                                 when (pending.file) {
                                     DebugFile.PROGRESS -> importProgressJson(pending.json)
                                     DebugFile.METADATA_ALIASES -> importMetadataAliasesJson(pending.json)
+                                    DebugFile.FAVORITES -> importFavoritesJson(pending.json)
                                 }
                             }.onFailure { importError = it.message ?: pending.file.fileName }
                         }
@@ -434,11 +462,12 @@ fun SettingsScreen(
  * confirming doesn't need to re-open the picker. */
 private data class PendingImport(val file: DebugFile, val json: String)
 
-/** Settings' Debug section (PLAN.md §10) -- which of the two `appDataFolder` files a
+/** Settings' Debug section (PLAN.md §10) -- which of the three `appDataFolder` files a
  * view/clear/export/import action targets. */
 private enum class DebugFile(val fileName: String) {
     PROGRESS("progress.json"),
     METADATA_ALIASES("metadata_aliases.json"),
+    FAVORITES("favorites.json"),
 }
 
 /** A fetch takes a network round trip, so this needs a loading state distinct from "loaded but

@@ -63,6 +63,7 @@
     <string name="shelf_add_source">Set source</string>
     <string name="shelf_empty_no_source">No library source configured yet.</string>
     <string name="shelf_empty_no_series">No series found in this library yet.</string>
+    <string name="shelf_empty_no_matches">No series match this filter or search.</string>
     <string name="masthead_selected_label">Selected</string>
     <plurals name="selection_title_count">
         <item quantity="one">%1$d title</item>
@@ -96,8 +97,9 @@
     <string name="sort_release_start">Release start</string>
     <string name="filter_show_all">Show all</string>
     <string name="filter_show_in_progress">Show in progress</string>
-    <string name="filter_hide_read">Hide read</string>
-    <string name="filter_hide_matched">Hide matched</string>
+    <string name="filter_show_favorites">Show favorites</string>
+    <string name="filter_hide_read">Show unread</string>
+    <string name="filter_hide_matched">Show unmatched</string>
 
     <!-- SeriesScreen.kt: FixMetadataDialog -->
     <string name="fix_metadata_dialog_title">Fix metadata</string>
@@ -125,6 +127,7 @@
     </plurals>
     <string name="chapter_tile_up_next">UP NEXT</string>
     <string name="content_desc_chapter_read">Read</string>
+    <string name="favorite_badge">Favorite</string>
 
     <!-- YourPageScreen.kt -->
     <string name="your_page_empty_state">Nothing here yet -- read a chapter or two, or scan your library, and this fills in.</string>
@@ -132,6 +135,8 @@
     <string name="your_page_jump_back_in_subtitle">Recently read</string>
     <string name="your_page_shelf_title">ON YOUR SHELF</string>
     <string name="your_page_shelf_subtitle">In progress</string>
+    <string name="your_page_favorites_title">FAVORITES</string>
+    <string name="your_page_favorites_subtitle">Your hearted series</string>
     <string name="your_page_fresh_title">FRESH CHAPTERS</string>
     <string name="your_page_fresh_subtitle">Recently added</string>
     <string name="your_page_read_total">%1$d / %2$d READ</string>
@@ -201,6 +206,8 @@
     <string name="settings_sync_progress_subtitle">Pauses syncing without signing out</string>
     <string name="settings_sync_metadata_title">Sync fixed metadata</string>
     <string name="settings_sync_metadata_subtitle">Shares Fix Metadata matches across your devices to help reading progress line up correctly</string>
+    <string name="settings_sync_favorites_title">Sync favorites</string>
+    <string name="settings_sync_favorites_subtitle">Keeps your hearted series in sync across devices</string>
     <string name="settings_sync_background_title">Sync in background</string>
     <string name="settings_sync_background_subtitle">Off: only syncs while the app is open — no scheduled battery/network use</string>
     <string name="settings_sync_last_synced">Last synced %1$s</string>
@@ -210,8 +217,10 @@
     <string name="settings_section_debug_desc">Inspect, clear, export, or import the raw files this device syncs through Google Drive.</string>
     <string name="settings_debug_view_progress">View progress.json</string>
     <string name="settings_debug_view_metadata_aliases">View metadata_aliases.json</string>
+    <string name="settings_debug_view_favorites">View favorites.json</string>
     <string name="settings_debug_clear_progress">Clear progress.json</string>
     <string name="settings_debug_clear_metadata_aliases">Clear metadata_aliases.json</string>
+    <string name="settings_debug_clear_favorites">Clear favorites.json</string>
     <string name="settings_reset_library_title">Reset library</string>
     <string name="settings_reset_library_desc">Forgets the configured source and wipes every scanned series, chapter, and reading-progress row, plus all cached cover/banner files. Can't be undone.</string>
     <string name="settings_reset_confirm_title">Reset library?</string>
@@ -224,8 +233,10 @@
     <string name="settings_debug_clear_action">Clear</string>
     <string name="settings_debug_export_progress">Export progress.json</string>
     <string name="settings_debug_export_metadata_aliases">Export metadata_aliases.json</string>
+    <string name="settings_debug_export_favorites">Export favorites.json</string>
     <string name="settings_debug_import_progress">Import progress.json</string>
     <string name="settings_debug_import_metadata_aliases">Import metadata_aliases.json</string>
+    <string name="settings_debug_import_favorites">Import favorites.json</string>
     <string name="settings_debug_import_confirm_title">Import %1$s?</string>
     <string name="settings_debug_import_confirm_body">Overwrites the Drive copy with the picked file's contents. Other devices will merge against this file on their next sync.</string>
     <string name="settings_debug_import_action">Import</string>

@@ -11,6 +11,11 @@ data class LibraryCard(
     val unreadCount: Int,
     /** Chapters someone is mid-read in (pages recorded, not completed) — see [isInProgress]. */
     val startedCount: Int,
+    /** User's heart toggle (PLAN.md §10 favorites sync) — grid heart badge + favorites filter. */
+    val favorite: Boolean,
+    /** When the heart was last toggled — orders Your Page's Favorites shelf (recent first).
+     * Null when never touched. */
+    val favoriteUpdatedAt: Long?,
     val latestChapterAdded: Long,
     val latestRead: Long?,
     /** AniList `startDate.year`, once matched (PLAN.md §9) — drives the "release start" sort. */

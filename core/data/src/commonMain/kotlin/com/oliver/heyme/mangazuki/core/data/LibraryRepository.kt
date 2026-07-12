@@ -11,6 +11,7 @@ import com.oliver.heyme.mangazuki.core.domain.ioDispatcher
 import com.oliver.heyme.mangazuki.core.domain.nowEpochMillis
 import com.oliver.heyme.mangazuki.core.domain.SyncProgressRow
 import com.oliver.heyme.mangazuki.core.domain.MetadataAliasRow
+import com.oliver.heyme.mangazuki.core.domain.FavoriteRow
 import com.oliver.heyme.mangazuki.core.metadata.RemoteWorkDetails
 import com.oliver.heyme.mangazuki.core.data.db.Series as SeriesRow
 import kotlinx.coroutines.flow.Flow
@@ -39,6 +40,8 @@ class LibraryRepository(db: MangaDatabase) {
                     chapterCount = r.chapter_count.toInt(),
                     unreadCount = (r.chapter_count - r.read_count).toInt(),
                     startedCount = r.started_count.toInt(),
+                    favorite = r.favorite == 1L,
+                    favoriteUpdatedAt = r.favorite_updated_at,
                     latestChapterAdded = r.latest_chapter_added ?: r.date_added,
                     latestRead = r.latest_read,
                     startYear = r.start_year?.toInt(),
@@ -251,6 +254,51 @@ class LibraryRepository(db: MangaDatabase) {
             )
         }
     }
+
+    /** The user's heart toggle (PLAN.md §10 favorites sync) — always a fresh local write, like
+     * [recordMetadataAlias]; the stale-remote guard lives in [applyFavoriteIfNewer]. */
+    suspend fun setFavorite(seriesId: String, favorited: Boolean, deviceId: String) = withContext(ioDispatcher) {
+        q.setFavorite(if (favorited) 1 else 0, nowEpochMillis(), deviceId, seriesId)
+    }
+
+    /** Every series whose heart was ever touched (PLAN.md §10) — the local half of a favorites
+     * sync pass. Un-favorited rows are included deliberately: they're explicit tombstones that
+     * must sync (the progress-v3 lesson). */
+    suspend fun allFavoritesForSync(): List<FavoriteRow> = withContext(ioDispatcher) {
+        q.selectAllFavoritesForSync().executeAsList().map {
+            FavoriteRow(
+                normalizedTitle = it.sort_title,
+                provider = it.metadata_provider,
+                externalId = it.external_id,
+                favorited = it.favorite == 1L,
+                updatedAt = it.favorite_updated_at!!, // query filters on IS NOT NULL
+                deviceId = it.favorite_device_id,
+            )
+        }
+    }
+
+    /** [resolveLocalChapterId]'s series-scoped twin (PLAN.md §10 favorites sync) — resolves a
+     * synced favorite's key to the local series, provider identity first, frozen normalized
+     * title as the fallback. Null when this device hasn't scanned that series. */
+    suspend fun resolveLocalSeriesId(provider: String?, externalId: String?, normalizedTitle: String): String? =
+        withContext(ioDispatcher) {
+            if (provider != null && externalId != null) {
+                q.selectSeriesIdByProviderKey(provider, externalId).executeAsOneOrNull()?.let { return@withContext it }
+            }
+            q.selectSeriesIdByTitleKey(normalizedTitle).executeAsOneOrNull()
+        }
+
+    /** Applies a synced favorite winner unless the local state is already at least as new —
+     * same read-then-conditional-write-in-a-transaction reasoning as [applyProgressIfNewer]. */
+    suspend fun applyFavoriteIfNewer(seriesId: String, favorited: Boolean, updatedAt: Long, deviceId: String) =
+        withContext(ioDispatcher) {
+            q.transaction {
+                val currentUpdatedAt = q.selectFavoriteUpdatedAt(seriesId).executeAsOneOrNull()?.favorite_updated_at
+                if (currentUpdatedAt == null || updatedAt > currentUpdatedAt) {
+                    q.setFavorite(if (favorited) 1 else 0, updatedAt, deviceId, seriesId)
+                }
+            }
+        }
 
     /** Persist the granted library root so it's remembered across restarts (PLAN.md §5 source table). */
     suspend fun saveLocalRoot(rootLocator: String, displayName: String) = withContext(ioDispatcher) {
@@ -468,6 +516,7 @@ class LibraryRepository(db: MangaDatabase) {
         siteUrl = r.site_url,
         bannerPath = r.banner_path,
         metadataProvider = r.metadata_provider,
+        favorite = r.favorite == 1L,
     )
 
     private fun String?.splitList(): List<String> = this?.split("|")?.filter { it.isNotBlank() } ?: emptyList()

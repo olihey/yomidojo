@@ -7,6 +7,7 @@ import com.oliver.heyme.mangazuki.core.data.DatabaseDriverFactory
 import com.oliver.heyme.mangazuki.core.data.LibraryRepository
 import com.oliver.heyme.mangazuki.core.data.createMangaDatabase
 import com.oliver.heyme.mangazuki.core.sync.GoogleDriveSyncBackend
+import com.oliver.heyme.mangazuki.core.sync.NoOpFavoritesBackend
 import com.oliver.heyme.mangazuki.core.sync.NoOpMetadataAliasBackend
 import com.russhwolf.settings.SharedPreferencesSettings
 
@@ -31,8 +32,8 @@ class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
         val repository = LibraryRepository(database)
 
         return try {
-            // One Drive backend instance covers both files (progress.json,
-            // metadata_aliases.json, PLAN.md §10) -- same auth/HTTP plumbing either way.
+            // One Drive backend instance covers all three files (progress.json,
+            // metadata_aliases.json, favorites.json, PLAN.md §10) -- same auth/HTTP plumbing.
             val driveBackend = GoogleDriveSyncBackend(authManager)
             // Settings' "Sync fixed metadata" toggle -- off means never pull/push
             // metadata_aliases.json, without the coordinator needing to know why.
@@ -40,7 +41,13 @@ class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
             // Only record an alias "last synced" timestamp when the toggle is actually on -- otherwise
             // the byline would claim a metadata_aliases.json sync that never happened (PLAN.md §10).
             val onAliasSyncCompleted: () -> Unit = { if (appPrefs.metadataAliasSyncEnabled.value) appPrefs.recordMetadataAliasSyncCompleted() }
-            ProgressSyncCoordinator(repository, driveBackend, aliasBackend, appPrefs::recordSyncCompleted, onAliasSyncCompleted).sync()
+            // Settings' "Sync favorites" toggle -- same substitution pattern (PLAN.md §10).
+            val favoritesBackend = if (appPrefs.favoriteSyncEnabled.value) driveBackend else NoOpFavoritesBackend
+            val onFavoriteSyncCompleted: () -> Unit = { if (appPrefs.favoriteSyncEnabled.value) appPrefs.recordFavoriteSyncCompleted() }
+            ProgressSyncCoordinator(
+                repository, driveBackend, aliasBackend, appPrefs::recordSyncCompleted, onAliasSyncCompleted,
+                favoritesBackend, onFavoriteSyncCompleted,
+            ).sync()
             Result.success()
         } catch (t: Throwable) {
             android.util.Log.w("SyncWorker", "background sync failed", t)

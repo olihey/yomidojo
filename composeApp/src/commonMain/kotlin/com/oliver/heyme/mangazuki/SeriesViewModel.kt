@@ -96,6 +96,16 @@ class SeriesViewModel(
         }
     }
 
+    /** The detail screen's heart (PLAN.md §10 favorites) -- same write-then-request-sync shape
+     * as [toggleRead]; the observed [series] flow updates the button state reactively. */
+    fun toggleFavorite() {
+        val current = series.value ?: return
+        scope.launch {
+            repository.setFavorite(seriesId, !current.favorite, appPreferences.deviceId)
+            requestSync()
+        }
+    }
+
     fun openMetadataSearch() {
         metadataSearchQuery.value = series.value?.title ?: ""
         metadataSearchResults.value = emptyList()

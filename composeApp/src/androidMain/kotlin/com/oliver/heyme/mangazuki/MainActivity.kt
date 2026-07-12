@@ -17,6 +17,7 @@ import com.oliver.heyme.mangazuki.core.metadata.KitsuMetadataProvider
 import com.oliver.heyme.mangazuki.core.scanner.LibraryScanner
 import com.oliver.heyme.mangazuki.core.sync.GoogleAuthManager
 import com.oliver.heyme.mangazuki.core.sync.GoogleDriveSyncBackend
+import com.oliver.heyme.mangazuki.core.sync.NoOpFavoritesBackend
 import com.oliver.heyme.mangazuki.core.sync.NoOpMetadataAliasBackend
 import com.russhwolf.settings.SharedPreferencesSettings
 import coil3.ImageLoader
@@ -151,11 +152,17 @@ class MainActivity : ComponentActivity() {
             fetchMetadataAliasesJson = {
                 if (authManager.isSignedIn()) GoogleDriveSyncBackend(authManager).fetchRawMetadataAliasesJson() else null
             },
+            fetchFavoritesJson = {
+                if (authManager.isSignedIn()) GoogleDriveSyncBackend(authManager).fetchRawFavoritesJson() else null
+            },
             clearProgressJson = {
                 if (authManager.isSignedIn()) GoogleDriveSyncBackend(authManager).clearProgress()
             },
             clearMetadataAliasesJson = {
                 if (authManager.isSignedIn()) GoogleDriveSyncBackend(authManager).clearMetadataAliases()
+            },
+            clearFavoritesJson = {
+                if (authManager.isSignedIn()) GoogleDriveSyncBackend(authManager).clearFavorites()
             },
             exportJsonFile = { fileName, content ->
                 val uri = suspendCancellableCoroutine<Uri?> { cont ->
@@ -176,6 +183,9 @@ class MainActivity : ComponentActivity() {
             },
             importMetadataAliasesJson = { json ->
                 if (authManager.isSignedIn()) GoogleDriveSyncBackend(authManager).pushRawMetadataAliasesJson(json)
+            },
+            importFavoritesJson = { json ->
+                if (authManager.isSignedIn()) GoogleDriveSyncBackend(authManager).pushRawFavoritesJson(json)
             },
             isDebugBuild = BuildConfig.DEBUG,
         )
@@ -343,8 +353,14 @@ class MainActivity : ComponentActivity() {
         // Only record an alias "last synced" timestamp when the toggle is actually on -- otherwise
         // the byline would claim a metadata_aliases.json sync that never happened (PLAN.md §10).
         val onAliasSyncCompleted: () -> Unit = { if (appPrefs.metadataAliasSyncEnabled.value) appPrefs.recordMetadataAliasSyncCompleted() }
+        // Settings' "Sync favorites" toggle (PLAN.md §10) -- same substitution pattern.
+        val favoritesBackend = if (appPrefs.favoriteSyncEnabled.value) driveBackend else NoOpFavoritesBackend
+        val onFavoriteSyncCompleted: () -> Unit = { if (appPrefs.favoriteSyncEnabled.value) appPrefs.recordFavoriteSyncCompleted() }
         runCatching {
-            ProgressSyncCoordinator(repository, driveBackend, aliasBackend, appPrefs::recordSyncCompleted, onAliasSyncCompleted).sync()
+            ProgressSyncCoordinator(
+                repository, driveBackend, aliasBackend, appPrefs::recordSyncCompleted, onAliasSyncCompleted,
+                favoritesBackend, onFavoriteSyncCompleted,
+            ).sync()
         }.onFailure { t ->
             // Matches SyncWorker's own logging for the same failure mode -- silent before, which
             // made a partial failure (e.g. the progress half already pushed, then the alias half
