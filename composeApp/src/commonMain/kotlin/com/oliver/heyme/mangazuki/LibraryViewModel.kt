@@ -103,6 +103,27 @@ class LibraryViewModel(
     val selectionMode = MutableStateFlow(false)
     val selectedIds = MutableStateFlow<Set<String>>(emptySet())
 
+    /** Which Library screen tab is showing (PLAN.md) -- seeded once here from the configured
+     * Start Screen setting, then plain in-memory state for the rest of this process's lifetime.
+     * That single seed point is deliberate (2026-07-13): a background-and-resume that never
+     * kills the process should keep whichever tab was open, which this already gets for free
+     * simply by being a plain `StateFlow` on a `LibraryViewModel` instance that `AppGraph` (and
+     * so `MainActivity`) holds onto unchanged the whole time the process is alive -- no explicit
+     * "was this recent" logic needed. A genuine process kill, on the other hand, must always
+     * re-seed from the Start Screen setting, no matter how recently the app was open: this
+     * ViewModel gets rebuilt fresh in that case (via a new `AppGraph` in `MainActivity.onCreate`),
+     * re-running this exact seed with nothing else in the way. Earlier versions of this seed
+     * also consulted a persisted "last active tab" as a fallback, on the mistaken assumption that
+     * a background trip could kill the process without Android delivering a fresh Activity
+     * instance for it to reseed from -- in testing that never actually happened once this moved
+     * off `rememberSaveable` (see [MangaShelfGrid]'s own history note), and the persisted
+     * fallback just meant a deliberate setting change could still lose to a stale recent tab. */
+    val activeTab = MutableStateFlow(appPreferences.startScreen.value)
+
+    fun setActiveTab(tab: StartScreen) {
+        activeTab.value = tab
+    }
+
     private val allCards: StateFlow<List<LibraryCard>> =
         repository.observeLibrary().stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

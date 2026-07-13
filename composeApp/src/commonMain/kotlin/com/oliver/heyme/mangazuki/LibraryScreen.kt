@@ -47,7 +47,6 @@ fun LibraryScreen(
     onChapterClick: (seriesId: String, chapterId: String) -> Unit,
     onSettingsClick: () -> Unit,
     titleLanguage: TitleLanguage,
-    startScreen: StartScreen = StartScreen.LIBRARY,
     /** OneDrive sign-in state/trigger (PLAN.md §6.3) — Activity-owned, see [App]. */
     oneDriveAuthState: StateFlow<OneDriveAuthState> = MutableStateFlow(OneDriveAuthState.SignedOut),
     onOneDriveSignIn: () -> Unit = {},
@@ -119,7 +118,6 @@ fun LibraryScreen(
         resumeChapters = resumeChapters,
         recentChapters = recentChapters,
         titleLanguage = titleLanguage,
-        startScreen = startScreen,
         selectionMode = selectionMode,
         selectedIds = selectedIds,
         onAddSource = openChooser,

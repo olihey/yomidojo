@@ -48,11 +48,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.Saver
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,16 +75,15 @@ import manga_reader.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 
-/** The masthead's headline doubles as a two-way tab switcher -- local-only UI state, not
- * persisted or known to [LibraryViewModel], since [YourPageContent] derives everything it shows
- * straight from the view model's own flows and needs nothing tab-specific remembered. Still
- * needs [rememberSaveable] rather than plain `remember`, though: nav-compose tears down and
- * rebuilds the "library" destination's whole composition on every visit (not just the first),
- * so a plain `remember` reset back to LIBRARY every time the user returned from a chapter
- * opened via "Resume"/"Fresh chapters" on this tab. */
-private enum class LibraryTab { LIBRARY, YOUR_PAGE }
-
-private val LibraryTabSaver = Saver<LibraryTab, String>(save = { it.name }, restore = { LibraryTab.valueOf(it) })
+/** The masthead's headline doubles as a two-way tab switcher, backed by [LibraryViewModel.activeTab]
+ * (a plain in-memory `StateFlow`, PLAN.md, 2026-07-13) rather than a Compose `rememberSaveable` --
+ * the ViewModel instance itself survives nav-compose tearing down and rebuilding the "library"
+ * destination's composition on the way back from a chapter (so returning from "Resume"/"Fresh
+ * chapters" still shows the same tab), and a genuine process restart rebuilds the ViewModel fresh,
+ * re-seeding from `AppPreferences` instead of leaving that to Android's own saved-instance-state
+ * Bundle -- which used to silently override a deliberate Start Screen setting change whenever the
+ * OS happened to preserve it, since `rememberSaveable` only consults a provided initial value when
+ * the Bundle has nothing saved at all. */
 
 @Composable
 private fun SortMode.label(): String = when (this) {
@@ -133,10 +131,6 @@ fun MangaShelfGrid(
     resumeChapters: Map<String, ChapterCard>,
     recentChapters: List<RecentChapterCard>,
     titleLanguage: TitleLanguage,
-    /** One-time seed for [activeTab]'s initial value (Settings' "Start screen", PLAN.md) -- not
-     * meant to be observed reactively, since changing the setting mid-session shouldn't yank the
-     * user off whichever tab they're already on. */
-    startScreen: StartScreen = StartScreen.LIBRARY,
     selectionMode: Boolean,
     selectedIds: Set<String>,
     /** Opens the "Local folder vs. SMB share" chooser (PLAN.md §6) -- NOT the raw SAF picker
@@ -159,22 +153,22 @@ fun MangaShelfGrid(
 ) {
     val archivo = mangaArchivo()
     val anton = mangaAnton()
-    val initialTab = if (startScreen == StartScreen.YOUR_PAGE) LibraryTab.YOUR_PAGE else LibraryTab.LIBRARY
-    var activeTab by rememberSaveable(stateSaver = LibraryTabSaver) { mutableStateOf(initialTab) }
+    val activeTab by viewModel.activeTab.collectAsState()
     // Hoisted above the tab switch: the `if (activeTab == ...)` below swaps each tab's whole
     // subtree out of composition, so a scroll state remembered inside ShelfGrid/YourPageContent
     // died (reset to top) on every tab change. Held here they outlive the swap -- and being
     // rememberSaveable-backed, they also survive nav-compose rebuilding this destination on the
-    // way back from a series/reader (the same reason activeTab needs rememberSaveable above).
+    // way back from a series/reader.
     val shelfGridState = rememberLazyGridState()
     val yourPageListState = rememberLazyListState()
 
     Column(Modifier.fillMaxSize().background(MangaColors.Bg)) {
         ShelfMasthead(
-            progress, enrichProgress, canRescan, onRescan = viewModel::rescan, onSettingsClick, activeTab, onTabChange = { activeTab = it },
+            progress, enrichProgress, canRescan, onRescan = viewModel::rescan, onSettingsClick, activeTab,
+            onTabChange = viewModel::setActiveTab,
             selectionMode, selectedIds.size, onSelectAll, onSelectNone, onMarkRead, onMarkUnread, onExitSelectionMode, archivo, anton,
         )
-        if (activeTab == LibraryTab.YOUR_PAGE) {
+        if (activeTab == StartScreen.YOUR_PAGE) {
             YourPageContent(inProgress, favorites, resumeChapters, recentChapters, titleLanguage, onSeriesClick, onChapterClick, yourPageListState)
         } else {
             if (needsReGrant) ShelfReGrantBanner(onAddSource, archivo)
@@ -217,8 +211,8 @@ private fun ShelfMasthead(
     canRescan: Boolean,
     onRescan: () -> Unit,
     onSettingsClick: () -> Unit,
-    activeTab: LibraryTab,
-    onTabChange: (LibraryTab) -> Unit,
+    activeTab: StartScreen,
+    onTabChange: (StartScreen) -> Unit,
     selectionMode: Boolean,
     selectedCount: Int,
     onSelectAll: () -> Unit,
@@ -293,15 +287,15 @@ private fun ShelfMasthead(
 }
 
 @Composable
-private fun MastheadTitleBlock(activeTab: LibraryTab, onTabChange: (LibraryTab) -> Unit, archivo: FontFamily, anton: FontFamily, modifier: Modifier = Modifier) {
+private fun MastheadTitleBlock(activeTab: StartScreen, onTabChange: (StartScreen) -> Unit, archivo: FontFamily, anton: FontFamily, modifier: Modifier = Modifier) {
     Column(modifier) {
         Text(
             "YOMIDOJO", color = MangaColors.Accent, fontFamily = archivo, fontWeight = FontWeight.SemiBold,
             fontSize = 10.sp, letterSpacing = 3.sp,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 4.dp)) {
-            MastheadTab(stringResource(Res.string.tab_library), active = activeTab == LibraryTab.LIBRARY, onClick = { onTabChange(LibraryTab.LIBRARY) }, anton)
-            MastheadTab(stringResource(Res.string.tab_your_page), active = activeTab == LibraryTab.YOUR_PAGE, onClick = { onTabChange(LibraryTab.YOUR_PAGE) }, anton)
+            MastheadTab(stringResource(Res.string.tab_library), active = activeTab == StartScreen.LIBRARY, onClick = { onTabChange(StartScreen.LIBRARY) }, anton)
+            MastheadTab(stringResource(Res.string.tab_your_page), active = activeTab == StartScreen.YOUR_PAGE, onClick = { onTabChange(StartScreen.YOUR_PAGE) }, anton)
         }
     }
 }

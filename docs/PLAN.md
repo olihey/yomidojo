@@ -1795,6 +1795,50 @@ the favorites-apply loop exactly. A rescan (or the next periodic enrichment pass
 `selectUnmatchedSeries` only filters on `external_id IS NULL`, so a "✕" series is retried
 automatically, no permanent lockout) now picks up the alias once it's synced down.
 
+**Fixed: Library/Your Page tab didn't follow the rule "keep the current tab only across a plain
+background/resume; a killed-and-relaunched process always re-applies the Start Screen setting"
+(2026-07-12/13, three passes before landing on this).** Reported live across several rounds as the
+bug kept resurfacing under slightly different framings — worth recording all three, since each
+wrong diagnosis is exactly the trap the next person debugging this will also fall into.
+
+*Attempt 1:* leaving the Library tab visible, backgrounding the app, and coming straight back
+showed Your Page (the "Start screen" default) instead. Diagnosis at the time: `MangaShelfGrid`'s
+`activeTab` used `rememberSaveable`, and a background trip on this Samsung tablet can trigger a
+full process kill within seconds; assumed the killed process's saved-instance-state Bundle wasn't
+always delivered back on relaunch. First fix (wrong model): an `AppPreferences`-backed fallback
+recording the last-active tab and a "last backgrounded" timestamp, restoring the tab only within a
+30-minute window and otherwise falling back to `startScreen` — treating "how long ago" as the
+signal for whether to honor the setting.
+
+*Attempt 2:* the user then set Start Screen to Your Page and did a cold start — it opened on
+Library anyway, well within that 30-minute window. Live `adb shell am kill` testing found the
+attempt-1 diagnosis was backwards: **`rememberSaveable`'s own Bundle restoration wins outright
+whenever the OS actually preserves it** (which it did, reliably, in every controlled kill), bypassing
+any initial-value seed entirely — Compose only consults a provided seed when the Bundle has
+nothing saved at all. Second fix: moved `activeTab` off `rememberSaveable` into `LibraryViewModel`
+as a plain `MutableStateFlow` (a plain object `AppGraph` holds above the NavHost, so it still
+survives in-app navigation to a series/reader and back), seeded from the same
+"recent-tab-within-30-minutes, else `startScreen`" rule as attempt 1 — still the wrong rule, just
+no longer sabotaged by a second, competing seed mechanism.
+
+*Attempt 3 (correct):* the user clarified the actual intended rule directly: killing the process
+should **always** re-apply Start Screen, regardless of elapsed time — "we only keep the current
+view if the app goes to background and comes back," full stop, no time window at all. The
+30-minute "recent session" heuristic was solving a problem that didn't need solving: once
+`activeTab` lived in `LibraryViewModel` (a plain object rebuilt fresh only when `MainActivity`
+itself is recreated, i.e. only on a genuine process restart), simply seeding it from
+`appPreferences.startScreen.value` — with no fallback at all — already gives the right answer in
+both cases for free. A background/resume that never kills the process never rebuilds
+`LibraryViewModel`, so `activeTab` is untouched (matches "keep current view"); a killed-and-relaunched
+process gets a brand new `LibraryViewModel`, re-running the same one-line seed (matches "always
+re-applies Start Screen"). Removed the entire persisted-tab mechanism as a result:
+`AppPreferences.recordActiveLibraryTab`/`recordBackgrounded`/`recentLibraryTabOrNull` and their two
+backing keys, `MainActivity.onStop`'s stamp call, and `setStartScreen`'s now-pointless key-clearing.
+`MangaShelfGrid`'s private `LibraryTab` enum was retired in favor of reusing `StartScreen`
+throughout, since the two were always kept in lockstep anyway. Verified live for both real cases:
+a killed process always opens on the configured Start Screen regardless of which tab was open
+before; a background/resume that never kills the process keeps whichever tab was active.
+
 **Fixed: sync's per-row transactions made a full-library merge take minutes, silently blocking
 enrichment behind it (2026-07-12).** Reported live: after rescanning a 306-title library, no
 "Fetching metadata…" progress ever appeared. Root cause: `ProgressSyncCoordinator.sync()` applied
