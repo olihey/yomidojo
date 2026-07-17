@@ -62,6 +62,8 @@ class LibraryViewModel(
     private val smbSourceFactory: SmbSourceFactory?,
     /** Null on platforms without OneDrive support yet (PLAN.md §6.3) — same seam pattern. */
     private val oneDriveSourceFactory: OneDriveSourceFactory? = null,
+    /** Null on platforms without Google Drive support yet (PLAN.md §6.4) — same seam pattern. */
+    private val googleDriveSourceFactory: GoogleDriveSourceFactory? = null,
     private val prefs: LibraryPreferences,
     private val enricher: MetadataEnricher,
     private val appPreferences: AppPreferences,
@@ -206,6 +208,9 @@ class LibraryViewModel(
             if (type == "ONEDRIVE") {
                 reconfigureOneDriveSource()
             }
+            if (type == "GOOGLEDRIVE") {
+                reconfigureGoogleDriveSource()
+            }
             val scanRoot = resolveScanRoot(type, configBlob)
             _canRescan.value = scanRoot != null
             if (scanRoot != null && !source.canAccess(scanRoot)) _needsReGrant.value = true
@@ -287,9 +292,46 @@ class LibraryViewModel(
         return null
     }
 
+    /** Whether the Google Drive connect dialog can skip its sign-in step (PLAN.md §6.4) --
+     * shares [GoogleAuthManager]'s combined-scope sign-in with Drive sync, so this is true the
+     * moment the user has signed in for *either* feature. */
+    fun isGoogleDriveSignedIn(): Boolean = googleDriveSourceFactory?.isSignedIn() == true
+
+    /** Candidate source backing one folder-browse session (PLAN.md §6.4) — mirrors
+     * [oneDriveCandidate]: nothing is persisted or reconfigured until [connectGoogleDrive]. */
+    private var googleDriveCandidate: MangaSource? = null
+
+    /** One directory level of the signed-in Google Drive, folders only — mirrors
+     * [listOneDriveFolders]. [path] is a Drive file id (or "" for the Drive root), not a
+     * `/`-joined path — see [GoogleDriveConfig]. */
+    suspend fun listGoogleDriveFolders(path: String): Result<List<SourceEntry>> {
+        val factory = googleDriveSourceFactory ?: return Result.failure(IllegalStateException("Google Drive isn't supported on this platform"))
+        val candidate = googleDriveCandidate ?: factory.build().also { googleDriveCandidate = it }
+        return runCatching { candidate.list(path).filter { it.isDirectory } }
+    }
+
+    /** Mirrors [connectOneDrive] for Google Drive (PLAN.md §6.4): validates the chosen folder id
+     * against the candidate source *before* persisting/reconfiguring anything, then persists,
+     * swaps the live source, and fires the scan without holding the dialog open. */
+    suspend fun connectGoogleDrive(rootId: String, displayName: String): String? {
+        val factory = googleDriveSourceFactory ?: return "Google Drive isn't supported on this platform"
+        val candidate = googleDriveCandidate ?: factory.build()
+        if (!candidate.canAccess(rootId)) return "Couldn't access this folder on Google Drive."
+        repository.saveGoogleDriveSource(GoogleDriveConfig(rootId).toBlob(), displayName)
+        (source as? ConfigurableMangaSource)?.reconfigure(candidate)
+        googleDriveCandidate = null
+        _canRescan.value = true
+        _needsReGrant.value = false
+        scope.launch { runScan(rootId) }
+        return null
+    }
+
     /** Settings -> Reset library (PLAN.md §7.1): wipes the DB, the cached cover/banner files,
-     * the image loader's own cache, and any saved SMB/OneDrive credentials, then reverts to the
-     * local SAF source — the app ends up back in its pre-first-scan "no source configured" state. */
+     * the image loader's own cache, and any saved SMB/OneDrive/Google Drive credentials, then
+     * reverts to the local SAF source — the app ends up back in its pre-first-scan "no source
+     * configured" state. Deliberately does NOT sign out of Google Drive the way [oneDriveSourceFactory]
+     * does -- that account is shared with Drive sync (PLAN.md §10), which Reset library has never
+     * touched, so severing it here would silently break a feature this action doesn't own. */
     fun resetLibrary() {
         scope.launch {
             repository.resetLibrary()
@@ -298,6 +340,7 @@ class LibraryViewModel(
             smbSourceFactory?.clearPassword()
             oneDriveSourceFactory?.signOut()
             oneDriveCandidate = null
+            googleDriveCandidate = null
             (source as? ConfigurableMangaSource)?.reconfigure(localSource)
             _canRescan.value = false
             _needsReGrant.value = false
@@ -321,6 +364,8 @@ class LibraryViewModel(
             // A OneDrive root of "" (the whole drive) is legitimate — the non-null blob is
             // what distinguishes "configured at the drive root" from "not configured".
             "ONEDRIVE" -> OneDriveConfig.fromBlob(configBlob).rootPath
+            // Same reasoning for Google Drive's "" (Drive's own root id) -- see GoogleDriveConfig.
+            "GOOGLEDRIVE" -> GoogleDriveConfig.fromBlob(configBlob).rootPath
             else -> configBlob
         }
     }
@@ -335,6 +380,11 @@ class LibraryViewModel(
 
     private fun reconfigureOneDriveSource() {
         val factory = oneDriveSourceFactory ?: return
+        (source as? ConfigurableMangaSource)?.reconfigure(factory.build())
+    }
+
+    private fun reconfigureGoogleDriveSource() {
+        val factory = googleDriveSourceFactory ?: return
         (source as? ConfigurableMangaSource)?.reconfigure(factory.build())
     }
 

@@ -62,6 +62,7 @@ internal fun AddSourceChooserDialog(
     onPickLocalFolder: () -> Unit,
     onPickSmbShare: () -> Unit,
     onPickOneDrive: () -> Unit,
+    onPickGoogleDrive: (() -> Unit)? = null,
 ) {
     val archivo = mangaArchivo()
     val anton = mangaAnton()
@@ -108,6 +109,9 @@ internal fun AddSourceChooserDialog(
                     SourceRow(FolderIcon, stringResource(Res.string.add_source_local_folder), stringResource(Res.string.add_source_local_desc), archivo, anton, onPickLocalFolder)
                     SourceRow(ServerIcon, stringResource(Res.string.add_source_smb_share), stringResource(Res.string.add_source_smb_desc), archivo, anton, onPickSmbShare)
                     SourceRow(OneDriveIcon, stringResource(Res.string.add_source_onedrive), stringResource(Res.string.add_source_onedrive_desc), archivo, anton, onPickOneDrive)
+                    if (onPickGoogleDrive != null) {
+                        SourceRow(GoogleDriveIcon, stringResource(Res.string.add_source_googledrive), stringResource(Res.string.add_source_googledrive_desc), archivo, anton, onPickGoogleDrive)
+                    }
                 }
 
                 Row(Modifier.fillMaxWidth().padding(top = 22.dp), horizontalArrangement = Arrangement.End) {
@@ -205,5 +209,16 @@ private val OneDriveIcon: ImageVector by lazy {
         .addPath(PathParser().parsePathString("M11.5 26h6.9V13.6a6.9 6.9 0 0 0 -4.4 2.4 5.6 5.6 0 0 0 -6.2 5.4c0 .2 0 .4 0 .6a4.9 4.9 0 0 0 3.7 3.9z").toNodes(), fill = SolidColor(Color(0xFF0F78D4)))
         .addPath(PathParser().parsePathString("M25.3 16.7a6.9 6.9 0 0 0 -6.9 -3.1V26h6.9a4.7 4.7 0 0 0 0 -9.3z").toNodes(), fill = SolidColor(Color(0xFF1490DF)))
         .addPath(PathParser().parsePathString("M6.2 21.8a4.9 4.9 0 0 0 2.3 4.1 4.8 4.8 0 0 0 2.9 .9V16.1a5.6 5.6 0 0 0 -5.2 5.7z").toNodes(), fill = SolidColor(Color(0xFF28AFEA)))
+        .build()
+}
+
+/** The Google Drive brand mark -- the three-shade colored cloud, verbatim fill paths from the
+ * design (viewBox 24), rendered untinted so the brand colors survive. */
+private val GoogleDriveIcon: ImageVector by lazy {
+    // Simplified representation of Google Drive logo - a blue cloud with different shades
+    ImageVector.Builder(name = "googledrive", defaultWidth = 24.dp, defaultHeight = 24.dp, viewportWidth = 24f, viewportHeight = 24f)
+        .addPath(PathParser().parsePathString("M12 3C9.5 3 7.5 5 7.5 7.5C7.5 10 9.5 12 12 12S16.5 10 16.5 7.5C16.5 5 14.5 3 12 3M8 13L11 16L14 13").toNodes(), fill = SolidColor(Color(0xFF4285F4)))
+        .addPath(PathParser().parsePathString("M9 17C10 17 11 17.5 11 18C11 18.5 10 19 9 19S7 18.5 7 18C7 17.5 8 17 9 17Z").toNodes(), fill = SolidColor(Color(0xFF34A853)))
+        .addPath(PathParser().parsePathString("M15 17C16 17 17 17.5 17 18C17 18.5 16 19 15 19S13 18.5 13 18C13 17.5 14 17 15 17Z").toNodes(), fill = SolidColor(Color(0xFFFBBC05)))
         .build()
 }

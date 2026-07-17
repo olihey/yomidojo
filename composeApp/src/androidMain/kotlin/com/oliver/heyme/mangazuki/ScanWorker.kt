@@ -26,8 +26,9 @@ class ScanWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
         val database = createMangaDatabase(DatabaseDriverFactory(applicationContext).create())
         val repository = LibraryRepository(database)
 
-        // savedLocalRoot() holds a raw SAF URI for LOCAL, or an SmbConfig/OneDriveConfig blob
-        // otherwise — resolve both the right MangaSource and the right scan locator from `type`.
+        // savedLocalRoot() holds a raw SAF URI for LOCAL, or an SmbConfig/OneDriveConfig/
+        // GoogleDriveConfig blob otherwise — resolve both the right MangaSource and the right
+        // scan locator from `type`.
         val type = repository.savedSourceType()
         val configBlob = repository.savedLocalRoot() ?: return Result.success()
         val (source, root) = when (type) {
@@ -41,6 +42,12 @@ class ScanWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
                 // a signed-out/offline run fails the canAccess guard below into a clean no-op.
                 val auth = createMicrosoftAuthManager(applicationContext)
                 OneDriveMangaSource(auth::accessToken) to OneDriveConfig.fromBlob(configBlob).rootPath
+            }
+            "GOOGLEDRIVE" -> {
+                // Same reasoning as OneDrive above: GoogleAuthStore is process-wide, so a
+                // signed-out/offline run fails the canAccess guard below into a clean no-op.
+                val auth = createGoogleAuthManager(applicationContext)
+                GoogleDriveMangaSource(auth::accessToken) to GoogleDriveConfig.fromBlob(configBlob).rootPath
             }
             else -> SafMangaSource(applicationContext) to configBlob
         }

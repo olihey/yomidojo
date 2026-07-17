@@ -78,7 +78,7 @@ class LibrarySyncer(
             .filter { it.format == ChapterFormat.CBZ }
             .minWithOrNull(compareBy({ it.volume ?: Double.MAX_VALUE }, { it.number ?: Double.MAX_VALUE }, { it.locator }))
             ?: return scanned
-        val comicInfoTitle = scanner.comicInfoMeta(firstCbz.locator)?.seriesTitle ?: return scanned
+        val comicInfoTitle = scanner.comicInfoMeta(firstCbz.locator, firstCbz.size)?.seriesTitle ?: return scanned
         return scanned.copy(series = scanned.series.copy(title = comicInfoTitle, sortTitle = normalizeSortTitle(comicInfoTitle)))
     }
 }

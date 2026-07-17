@@ -1,5 +1,10 @@
 package com.oliver.heyme.mangazuki
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
@@ -25,6 +30,10 @@ fun App(
     // onSignIn/syncState, but terminating at LibraryScreen's connect dialog instead of Settings.
     oneDriveAuthState: StateFlow<OneDriveAuthState> = MutableStateFlow(OneDriveAuthState.SignedOut),
     onOneDriveSignIn: () -> Unit = {},
+    // Google Drive source (PLAN.md §6.4) -- unlike OneDrive, no separate sign-in callback/state:
+    // it shares Drive sync's own onSignIn/graph.syncState below, one combined-scope sign-in for
+    // both features (PLAN.md §10, 2026-07-16 decision).
+    googleDriveSourceFactory: GoogleDriveSourceFactory? = null,
 ) {
     val navController = rememberNavController()
     val titleLanguage by graph.appPreferences.titleLanguage.collectAsState()
@@ -44,6 +53,9 @@ fun App(
                     titleLanguage = titleLanguage,
                     oneDriveAuthState = oneDriveAuthState,
                     onOneDriveSignIn = onOneDriveSignIn,
+                    googleDriveSourceFactory = googleDriveSourceFactory,
+                    syncState = graph.syncState,
+                    onSignIn = onSignIn,
                 )
             }
             composable("settings") {
@@ -93,6 +105,25 @@ fun App(
                 // next-chapter preview) from a deliberate open (a chapter tap from the series
                 // screen or Your Page) -- only the latter shows the chrome overlay on arrival.
                 arguments = listOf(navArgument("fromSwitch") { type = NavType.BoolType; defaultValue = false }),
+                // NavHost's default crossfade was the original "fade on the first page" bug --
+                // switching chapters pops+pushes this same route, and the default transition
+                // faded the incoming page in over whatever the window background was (white
+                // before the manifest theme fix, black after). First fix disabled all animation
+                // on this destination outright, but that made a chapter switch feel like a hard
+                // cut instead -- reported live as wanting a *deliberate* smooth fade back, just a
+                // controlled one (300ms) rather than NavHost's default. So: fade only when this
+                // is actually a chapter switch (`targetState`'s own `fromSwitch` -- true only for
+                // the entry `onNavigateToChapter` below pushes), not a fresh open from the series
+                // screen/Your Page, which should still just appear with no transition. Pop
+                // (back button) is untouched for the same reason.
+                enterTransition = {
+                    if (targetState.arguments?.getBoolean("fromSwitch") == true) fadeIn(tween(300)) else EnterTransition.None
+                },
+                exitTransition = {
+                    if (targetState.arguments?.getBoolean("fromSwitch") == true) fadeOut(tween(300)) else ExitTransition.None
+                },
+                popEnterTransition = { EnterTransition.None },
+                popExitTransition = { ExitTransition.None },
             ) { entry ->
                 val seriesId = entry.arguments?.getString("seriesId") ?: return@composable
                 val chapterId = entry.arguments?.getString("chapterId") ?: return@composable

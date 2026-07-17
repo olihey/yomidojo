@@ -50,6 +50,14 @@ fun LibraryScreen(
     /** OneDrive sign-in state/trigger (PLAN.md §6.3) — Activity-owned, see [App]. */
     oneDriveAuthState: StateFlow<OneDriveAuthState> = MutableStateFlow(OneDriveAuthState.SignedOut),
     onOneDriveSignIn: () -> Unit = {},
+    /** Google Drive source factory + sign-in (PLAN.md §6.4) — Activity-owned, see [App].
+     * [syncState]/[onSignIn] are Drive *sync's* own (already threaded to [SettingsScreen]) --
+     * reused here rather than a dedicated auth flow, since both features share one Google
+     * account and one combined-scope sign-in (PLAN.md §10, 2026-07-16 decision). Null
+     * [googleDriveSourceFactory] hides the option entirely, same seam as OneDrive's factory. */
+    googleDriveSourceFactory: GoogleDriveSourceFactory? = null,
+    syncState: StateFlow<SyncState> = MutableStateFlow(SyncState.SignedOut),
+    onSignIn: () -> Unit = {},
 ) {
     // The redesigned dark full-bleed look (PLAN.md, "Manga Library Tablet" Claude Design) is
     // meant to run edge-to-edge -- otherwise the system status/nav bars sit on top of it as
@@ -76,6 +84,7 @@ fun LibraryScreen(
     var showAddSourceChooser by remember { mutableStateOf(false) }
     var showSmbDialog by remember { mutableStateOf(false) }
     var showOneDriveDialog by remember { mutableStateOf(false) }
+    var showGoogleDriveDialog by remember { mutableStateOf(false) }
     val openChooser = { showAddSourceChooser = true }
 
     if (showAddSourceChooser) {
@@ -84,6 +93,9 @@ fun LibraryScreen(
             onPickLocalFolder = { showAddSourceChooser = false; onPickFolder() },
             onPickSmbShare = { showAddSourceChooser = false; showSmbDialog = true },
             onPickOneDrive = { showAddSourceChooser = false; showOneDriveDialog = true },
+            onPickGoogleDrive = if (googleDriveSourceFactory != null) {
+                { showAddSourceChooser = false; showGoogleDriveDialog = true }
+            } else null,
         )
     }
     if (showSmbDialog) {
@@ -95,6 +107,14 @@ fun LibraryScreen(
             oneDriveAuthState = oneDriveAuthState,
             onOneDriveSignIn = onOneDriveSignIn,
             onDismiss = { showOneDriveDialog = false },
+        )
+    }
+    if (showGoogleDriveDialog) {
+        GoogleDriveConnectDialog(
+            viewModel = viewModel,
+            syncState = syncState,
+            onSignIn = onSignIn,
+            onDismiss = { showGoogleDriveDialog = false },
         )
     }
 

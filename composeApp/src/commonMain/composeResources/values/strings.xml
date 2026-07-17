@@ -31,6 +31,8 @@
     <string name="add_source_smb_desc">Connect to a shared network drive</string>
     <string name="add_source_onedrive">OneDrive</string>
     <string name="add_source_onedrive_desc">Sync titles from your OneDrive account</string>
+    <string name="add_source_googledrive">Google Drive</string>
+    <string name="add_source_googledrive_desc">Sync titles from your Google Drive account</string>
 
     <!-- LibraryScreen.kt: SmbConnectDialog -->
     <string name="smb_dialog_title">Connect to SMB share</string>
@@ -51,6 +53,15 @@
     <string name="onedrive_picker_use_folder">Use this folder</string>
     <string name="onedrive_picker_retry">Retry</string>
     <string name="onedrive_error_list">Couldn't load folders - check your connection.</string>
+
+    <!-- GoogleDriveDialogs.kt -->
+    <string name="googledrive_dialog_title">Connect to Google Drive</string>
+    <string name="googledrive_sign_in_hint">Sign in with the Google account that holds your manga library.</string>
+    <string name="googledrive_sign_in">Sign in with Google</string>
+    <string name="googledrive_root_name">My Drive</string>
+    <string name="googledrive_picker_title">Choose your manga folder</string>
+    <string name="googledrive_error_list">Couldn't load folders - check your connection.</string>
+    <string name="googledrive_picker_retry">Retry</string>
 
     <!-- Shared selection-mode actions (MangaShelfGrid.kt + MangaDetailScreen.kt) -->
     <string name="selection_action_all">All</string>

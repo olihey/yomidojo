@@ -367,11 +367,25 @@ class LibraryRepository(db: MangaDatabase) {
         )
     }
 
+    /** Same single configured-root row again, but for Google Drive (PLAN.md §6.4) —
+     * [configBlob] is [com.oliver.heyme.mangazuki.GoogleDriveConfig]'s file id (the OAuth tokens
+     * live in encrypted storage, not here), the same secret/non-secret split as
+     * [saveOneDriveSource]. */
+    suspend fun saveGoogleDriveSource(configBlob: String, displayName: String) = withContext(ioDispatcher) {
+        q.upsertSource(
+            id = LOCAL_SOURCE_ID,
+            type = "GOOGLEDRIVE",
+            display_name = displayName,
+            config_json = configBlob,
+            sync_token = null,
+        )
+    }
+
     suspend fun savedLocalRoot(): String? = withContext(ioDispatcher) {
         q.selectSourceRoot(LOCAL_SOURCE_ID).executeAsOneOrNull()
     }
 
-    /** "LOCAL", "SMB", or "ONEDRIVE" for the single configured root, or null if none configured yet. */
+    /** "LOCAL", "SMB", "ONEDRIVE", or "GOOGLEDRIVE" for the single configured root, or null if none configured yet. */
     suspend fun savedSourceType(): String? = withContext(ioDispatcher) {
         q.selectSourceType(LOCAL_SOURCE_ID).executeAsOneOrNull()
     }

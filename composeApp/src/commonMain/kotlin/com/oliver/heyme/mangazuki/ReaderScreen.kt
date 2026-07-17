@@ -123,9 +123,10 @@ fun ReaderScreen(
     val wideFlags by viewModel.wideFlags.collectAsState()
     val pageAspectRatios by viewModel.pageAspectRatios.collectAsState()
 
-    // Wait for both the page count AND every page's aspect ratio before building the pager,
-    // so spread pairing (which needs the full picture) never has to reshuffle mid-read.
-    if (pageCount <= 0 || wideFlags.size < pageCount || pageAspectRatios.size < pageCount) {
+    // Only the page count is required to start reading. Geometry may still be probing in the
+    // background for a remote chapter, but blocking first paint on every page's aspect ratio
+    // made large Google Drive volumes look hung forever.
+    if (pageCount <= 0) {
         val pdfPrep by viewModel.pdfPrepProgress.collectAsState()
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {

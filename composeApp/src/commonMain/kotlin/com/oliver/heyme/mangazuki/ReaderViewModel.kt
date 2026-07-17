@@ -174,15 +174,29 @@ class ReaderViewModel(
                 }
                 val count = provider.pageCount
                 _pageCount.value = count
+                // A remote CBZ may need one range read per page just to discover aspect ratios.
+                // Seed stable defaults immediately so the reader can render page 1 now instead of
+                // blocking behind a whole-chapter geometry walk.
+                _wideFlags.value = List(count) { false }
+                _pageAspectRatios.value = List(count) { 1f }
                 // PDFs skip the series screen's lazy page-count probe (counting means a full
                 // download there, PLAN.md §16) -- persist the count on first open instead, so
                 // the read-percentage overlay works from then on.
                 if (chapter.pageCount == null && count > 0) {
                     repository.setChapterPageCounts(listOf(chapter.id to count))
                 }
-                val sizes = (0 until count).map { i -> provider.pageSize(i) }
-                _wideFlags.value = sizes.map { it.width > it.height }
-                _pageAspectRatios.value = sizes.map { it.width.toFloat() / it.height.toFloat() }
+                if (count > 0) {
+                    val wideFlags = MutableList(count) { false }
+                    val aspectRatios = MutableList(count) { 1f }
+                    for (i in 0 until count) {
+                        val size = runCatching { provider.pageSize(i) }.getOrNull() ?: continue
+                        if (size.width <= 0f || size.height <= 0f) continue
+                        wideFlags[i] = size.width > size.height
+                        aspectRatios[i] = size.width / size.height
+                    }
+                    _wideFlags.value = wideFlags
+                    _pageAspectRatios.value = aspectRatios
+                }
                 provider.close()
             }.onFailure { t ->
                 println("ReaderViewModel: failed to open ${chapter.displayName}: $t")

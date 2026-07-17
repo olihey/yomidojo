@@ -27,11 +27,13 @@ data class ScannedSeries(val series: Series, val chapters: List<Chapter>)
  *   <root>/<Chapter>.pdf                      → PDF chapter grouped by filename-derived series
  *                                                title (PDFs have no ComicInfo.xml sidecar)
  *
- * Every CBZ's `ComicInfo.xml` is checked for its own `<Title>` too, used as that chapter's
- * display name in place of the filename-derived one (PLAN.md §5, 2026-07-06). [skipCache] lets
- * an unchanged file (same locator, same [SourceEntry.changeToken] as last scan) skip that check
- * entirely and reuse what was already resolved -- opening a CBZ just to re-read a sidecar file
- * that can't have changed is pure waste on a large, mostly-unchanged library.
+ * A root-level CBZ's `ComicInfo.xml` can still supply both its series grouping and its own
+ * display title, and a newly discovered folder-backed series still consults the first CBZ's
+ * `<Series>` once via [LibrarySyncer.withComicInfoTitle]. But archive chapters *inside an
+ * already-identified series folder* now keep the filename-derived display name during scan:
+ * doing a `ComicInfo.xml` fetch for every single CBZ in a large cloud-backed series turned the
+ * first scan into hundreds of tiny remote archive reads before the library could even populate.
+ * [skipCache] still lets unchanged files reuse whatever display name/page count was already known.
  */
 class LibraryScanner(private val source: MangaSource) {
 
@@ -51,7 +53,6 @@ class LibraryScanner(private val source: MangaSource) {
         // Skip hidden folders (e.g. Resilio's ".sync", ".thumbnails").
         for (dir in rootEntries.filter { it.isDirectory }) {
             val seriesId = deterministicId(source.id, dir.locator)
-
             val children = source.list(dir.locator)
             onDirectoryListed()
             val chapterEntries = children.filter { it.isDirectory || it.name.isChapterFile() }
@@ -127,18 +128,19 @@ class LibraryScanner(private val source: MangaSource) {
      * there's no `ComicInfo.xml`, no readable fields, or the file can't be read at all -- callers
      * fall back to folder/file names in every case, same as before this existed.
      */
-    suspend fun comicInfoMeta(cbzLocator: String): ComicInfoMeta? =
-        readComicInfoXml(source, cbzLocator)?.let(::parseComicInfoMeta)
+    suspend fun comicInfoMeta(cbzLocator: String, fileSize: Long? = null): ComicInfoMeta? =
+        readComicInfoXml(source, cbzLocator, fileSize)?.let(::parseComicInfoMeta)
 
     /** An archive-file chapter (CBZ or PDF) inside an already-identified series folder --
-     * [seriesId] never depends on this file's own metadata, only its display name does.
-     * Only a CBZ gets the `ComicInfo.xml` lookup; a PDF has no such sidecar (its own Info-dict
-     * Title metadata is deliberately unused -- unreliable in manga scans, PLAN.md §16). */
+     * [seriesId] never depends on this file's own metadata. Its display name also stays
+     * filename-derived on first scan now: fetching `ComicInfo.xml` for every CBZ in a large
+     * series was too expensive on cloud backends. PDFs still use the same filename fallback
+     * they always had (their own Info-dict Title metadata is deliberately unused -- unreliable
+     * in manga scans, PLAN.md §16). */
     private suspend fun folderArchiveChapter(seriesId: String, e: SourceEntry, now: Long, skipCache: ChapterSkipCache): Chapter {
         val chapterId = deterministicId(source.id, e.locator)
         val cached = skipCache.lookup(chapterId)?.takeIf { it.changeToken == e.changeToken }
         val displayName = cached?.displayName
-            ?: (if (e.name.isCbz()) comicInfoMeta(e.locator)?.title?.takeIf { it.isNotBlank() } else null)
             ?: cleanDisplayName(e.name)
         val parsed = FilenameParser.parse(e.name)
         return Chapter(
@@ -165,7 +167,7 @@ class LibraryScanner(private val source: MangaSource) {
     private suspend fun rootArchiveChapterAndSeries(e: SourceEntry, now: Long, skipCache: ChapterSkipCache): Triple<String, String, Chapter> {
         val chapterId = deterministicId(source.id, e.locator)
         val cached = skipCache.lookup(chapterId)?.takeIf { it.changeToken == e.changeToken }
-        val meta = if (cached == null && e.name.isCbz()) comicInfoMeta(e.locator) else null
+        val meta = if (cached == null && e.name.isCbz()) comicInfoMeta(e.locator, e.size) else null
 
         val seriesTitle = cached?.seriesTitle
             ?: meta?.seriesTitle?.takeIf { it.isNotBlank() }

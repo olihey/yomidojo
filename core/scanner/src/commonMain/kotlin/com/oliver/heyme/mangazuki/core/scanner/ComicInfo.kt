@@ -10,7 +10,7 @@ import com.oliver.heyme.mangazuki.core.source.MangaSource
  * before this feature existed. Also null on any missing-file/parse error -- best-effort, same
  * spirit as the reader's own ComicInfo.xml handling.
  */
-internal expect suspend fun readComicInfoXml(source: MangaSource, cbzLocator: String): String?
+internal expect suspend fun readComicInfoXml(source: MangaSource, cbzLocator: String, fileSize: Long?): String?
 
 /** A CBZ's `ComicInfo.xml`, distilled to the two fields the scanner cares about: the series it
  * belongs to and this chapter/issue's own title. Either can be null/blank -- that's the normal

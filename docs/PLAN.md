@@ -541,6 +541,71 @@ secret; put the Application (client) ID in `local.properties` as
 `MICROSOFT_OAUTH_CLIENT_ID`. Missing/blank shows a graceful "not set up" error in the
 connect dialog, same convention as Google sync.
 
+### 6.4 Google Drive source (2026-07-16)
+
+Landed in two passes: an initial, uncommitted attempt got the shape roughly right (a
+`GoogleDriveMangaSource` + connect-dialog seam mirroring §6.3) but shipped with the module not
+even compiling, and — the more important problem — copied OneDrive's *path*-based addressing
+onto an API that doesn't have it. Fixed as a deliberate pass rather than patched around:
+
+- **Drive addresses everything by opaque file id, not a path.** Unlike Microsoft Graph's
+  `root:/{path}:` form, Drive has no "get item at this path" call at all — children are found
+  via `q="'{parentId}' in parents"`, and a file/folder's own `id` is what every subsequent call
+  (list its children, fetch its bytes) takes. `SourceEntry.locator` for this source is that id
+  (`""` = Drive's own `root` alias), not a `/`-joined path — the one real design divergence from
+  every other source in this codebase, worth remembering before assuming §6.1/§6.3's locator
+  conventions apply universally. The connect dialog's folder browser (`GoogleDriveDialogs.kt`)
+  tracks a breadcrumb stack of (id, name) pairs for display, since there's no path string to
+  render directly the way OneDrive's picker has.
+- **One combined sign-in with Drive sync, not a separate one** (decision, superseding the first
+  pass's second `GoogleAuthManager` instance): `GoogleAuthManager` now requests
+  `drive.appdata` (sync's app-private folder, §10) and `drive.readonly` (browsing the user's
+  actual files) together in a single consent screen. Same Google account either way, so one
+  sign-in is simpler than asking twice — the tradeoff is that a user already signed in for sync
+  under the old appdata-only scope must sign in again once to pick up Drive browsing (Google
+  requires re-consent for a broadened scope; there's no way to silently upgrade a stored token).
+  `LibraryScreen`'s Google Drive connect dialog reuses Drive sync's own `syncState`/`onSignIn`
+  rather than a dedicated `GoogleDriveAuthState`, unlike OneDrive's fully independent auth flow.
+- **Downloads go through `?alt=media` with the `Authorization` header**, not
+  `webContentLink` (the first pass's approach) — Drive's documented, always-authenticated way to
+  fetch file bytes for any file the signed-in user can read, `Range`-request-capable the same as
+  OneDrive's pre-authenticated download URLs. `openRandomAccess` caches one bearer token per
+  handle and refreshes it once on a 401/403, the same shape as OneDrive's expired-URL retry —
+  just refreshing a token instead of re-fetching a URL, since Drive has no separate pre-signed
+  URL step to expire.
+- **Fixed: cold Drive rescans could appear stuck at "2 folders checked" (2026-07-17).**
+  The counter itself was honest: root listed, first series folder listed, then the scanner
+  spent a very long time opening each CBZ in that first series just to sniff `ComicInfo.xml`.
+  That was tolerable on local storage but awful on Drive because `readComicInfoXml()` used
+  `source.open()` + a forward `ZipInputStream` walk, i.e. a whole-file download per CBZ on a
+  reset-library / no-skip-cache rescan. First fix: thread the known chapter size into the
+  ComicInfo reader and, on a `RANGE_READ` source, read the ZIP central directory plus the
+  `ComicInfo.xml` entry via small positional reads instead. Second fix (needed once the real
+  `manga` subfolder was tested on-device): stop doing a per-CBZ `ComicInfo <Title>` lookup for
+  archive chapters that already live inside a series folder. Those now keep the filename-derived
+  chapter label during scan; the first-discovery series-title override still inspects only the
+  series' first CBZ, and root-level archive grouping still uses `ComicInfo` where it actually
+  affects identity. This keeps large Drive scans moving instead of burning hundreds of remote
+  archive metadata reads before a single title can appear.
+- **A malformed listing URL** (first-pass bug): the children-listing call built a URL already
+  containing `?fields=...`, then appended a second `"?fields=...&pageSize=1000"` on top —
+  two `?` in one URL. Fixed by building the full query string (encoded `q`/`fields`/`pageSize`)
+  in one place and appending `&pageToken=...` for continuation pages.
+- `GoogleDriveConfig` (rootPath-as-id blob) in `source.config_json` with
+  `type = "GOOGLEDRIVE"` (`LibraryRepository.saveGoogleDriveSource`) — otherwise mirrors
+  `OneDriveConfig` exactly. `ScanWorker` gained a GOOGLEDRIVE branch; Settings → Reset library
+  does **not** sign out of Google (unlike OneDrive) since the account is shared with sync, which
+  Reset library has never touched — severing it here would silently break a feature this action
+  doesn't own.
+- Pure parts (URL builders, DTO→`SourceEntry` mapping, config blob) are `internal` and covered
+  by `GoogleDriveMangaSourceTest`, the same split OneDrive's `OneDriveGraphTest` uses.
+
+Google Cloud project setup for `drive.readonly` is the same project §10 already documents for
+`drive.appdata` — just add the scope to the OAuth consent screen and the combined string above;
+no new client id/secret needed. Not yet verified live end-to-end (sign-in with the broadened
+scope → browse → connect) — doing so needs resetting a device's configured source first, which
+wasn't done against the real library this was developed against.
+
 ---
 
 ## 7. Library & series UX
@@ -2083,7 +2148,12 @@ No DB migration (`format` is `TEXT`) — that part held. No source changes — t
   343MB/196-page case, §6.2) — parallelizing was deferred pending confidence in smbj's
   concurrent-read thread-safety on a shared handle. The same per-page-sequential cost now
   also applies to a huge local CBZ, though local reads are fast enough that this hasn't
-  been observed to matter in practice the way it did over SMB.
+  been observed to matter in practice the way it did over SMB. **Reader open itself no longer
+  waits for that whole pass (2026-07-17):** `ReaderViewModel` now publishes `pageCount`
+  immediately with placeholder geometry (`wideFlags=false`, `aspectRatio=1f`) so the first
+  page can render right away, then backfills real page sizes once the probe finishes. This
+  specifically fixes remote Google Drive chapters that looked hung forever on open because the
+  loading spinner previously waited for every page's size before showing any content.
 
 ---
 

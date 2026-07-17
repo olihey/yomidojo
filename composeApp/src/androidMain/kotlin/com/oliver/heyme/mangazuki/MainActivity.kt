@@ -78,6 +78,14 @@ class MainActivity : ComponentActivity() {
         val oneDriveAuthState = MutableStateFlow<OneDriveAuthState>(
             if (microsoftAuthManager.isSignedIn()) OneDriveAuthState.SignedIn else OneDriveAuthState.SignedOut,
         )
+        // One shared GoogleAuthManager for Drive sync AND the Google Drive source factory below
+        // (PLAN.md §6.4, §10) -- both features are the same Google account and the same
+        // combined-scope sign-in (2026-07-16 decision), so unlike OneDrive there's no second,
+        // source-specific auth manager or sign-in callback. Built here (not lazily) so
+        // googleDriveSourceFactory can be constructed from it immediately; the `authManager`
+        // instance property assignment below just keeps the existing reference, not a new one.
+        authManager = createGoogleAuthManager(applicationContext)
+        val googleDriveSourceFactory = AndroidGoogleDriveSourceFactory(authManager)
 
         val database = createMangaDatabase(DatabaseDriverFactory(applicationContext).create())
         repository = LibraryRepository(database)
@@ -121,16 +129,15 @@ class MainActivity : ComponentActivity() {
             repository, { metadataProviders.get(appPrefs.metadataProvider.value) }, metadataProviders::byName, coverClient, coversDir,
         )
 
-        // Google Drive sync (PLAN.md §10) -- authManager is Android-only (AppAuth), so AppGraph
-        // (commonMain) only ever sees the resulting StateFlow, never the manager itself, the
-        // same reasoning as the SAF-specific pickFolder launcher below. Built before
-        // LibraryViewModel so its requestSync callback can be threaded into the constructor.
-        authManager = createGoogleAuthManager(applicationContext)
+        // Google Drive sync (PLAN.md §10) -- authManager (built above, shared with the source
+        // factory) is Android-only (AppAuth), so AppGraph (commonMain) only ever sees the
+        // resulting StateFlow, never the manager itself, the same reasoning as the SAF-specific
+        // pickFolder launcher below.
         val syncState = MutableStateFlow<SyncState>(if (authManager.isSignedIn()) SyncState.SignedIn else SyncState.SignedOut)
         val syncScheduler = ProgressSyncScheduler(activityScope) { runSyncIfEnabled(appPrefs, authManager, repository) }
 
         viewModel = LibraryViewModel(
-            repository, scanner, source, localSource, smbSourceFactory, oneDriveSourceFactory, prefs, enricher, appPrefs, coversDir,
+            repository, scanner, source, localSource, smbSourceFactory, oneDriveSourceFactory, googleDriveSourceFactory, prefs, enricher, appPrefs, coversDir,
             clearImageCache = { imageLoader.diskCache?.clear(); imageLoader.memoryCache?.clear() },
             requestSync = syncScheduler::requestSync,
         )
@@ -281,6 +288,7 @@ class MainActivity : ComponentActivity() {
                         oneDriveSignIn.launch(microsoftAuthManager.signInIntent())
                     }
                 },
+                googleDriveSourceFactory = googleDriveSourceFactory,
             )
         }
     }
