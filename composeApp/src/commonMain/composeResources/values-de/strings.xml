@@ -169,7 +169,9 @@
     <string name="reader_direction_hint_vertical_paged">Vertikal wischen, um weiterzugehen</string>
     <string name="reader_direction_hint_horizontal_rtl">Seitenbereiche antippen, um weiterzugehen · Manga-Reihenfolge</string>
     <string name="reader_direction_hint_horizontal">Seitenbereiche antippen, um weiterzugehen</string>
+    <string name="reader_previous_chapter_label">Vorheriges Kapitel</string>
     <string name="reader_next_chapter_label">Nächstes Kapitel</string>
+    <string name="reader_no_chapter_available">Nicht verfügbar</string>
     <string name="content_desc_page_number">Seite %1$d</string>
     <string name="reader_help_side_top">oben</string>
     <string name="reader_help_side_bottom">unten</string>

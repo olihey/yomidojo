@@ -227,6 +227,7 @@ private fun PagedReader(
         val pairPortrait = maxWidth > maxHeight
         val units = remember(wideFlags, pairPortrait) { buildPageUnits(pageCount, wideFlags, pairPortrait) }
         val initialUnit = remember(units) { unitIndexForPage(units, viewModel.currentPage.value) }
+        val previousChapter by viewModel.previousChapter.collectAsState()
         val nextChapter by viewModel.nextChapter.collectAsState()
         // One extra slot past the real pages previews the next chapter's cover; swiping onto it
         // and letting it settle there switches chapters (PLAN.md §8.1).
@@ -338,6 +339,8 @@ private fun PagedReader(
                 ReaderChrome(
                     seriesTitle = viewModel.seriesTitle,
                     chapter = viewModel.chapter,
+                    previousChapter = previousChapter,
+                    nextChapter = nextChapter,
                     currentPage = rawPage,
                     pageCount = pageCount,
                     readingMode = readingMode,
@@ -345,6 +348,7 @@ private fun PagedReader(
                     invertTapZones = viewModel.invertTapZones,
                     onReadingModeChange = viewModel::setReadingMode,
                     onBack = onBack,
+                    onNavigateToChapter = { target -> onNavigateToChapter(target.id) },
                     onSeek = { target ->
                         scope.launch { pagerState.scrollToPage(unitIndexForPage(units, target)) }
                     },
@@ -379,6 +383,7 @@ private fun ContinuousReader(
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = viewModel.currentPage.value.coerceIn(0, pageCount - 1))
     val scope = rememberCoroutineScope()
     val nextChapter by viewModel.nextChapter.collectAsState()
+    val previousChapter by viewModel.previousChapter.collectAsState()
     // Chapters made of many short images (e.g. text-over-image panels) can be shorter overall
     // than one viewport once every image finishes loading — Compose's LazyColumn then settles
     // with nothing left to scroll on its own, with zero user input. Without this guard that
@@ -534,11 +539,14 @@ private fun ContinuousReader(
                 ReaderChrome(
                     seriesTitle = viewModel.seriesTitle,
                     chapter = viewModel.chapter,
+                    previousChapter = previousChapter,
+                    nextChapter = nextChapter,
                     currentPage = listState.firstVisibleItemIndex.coerceIn(0, pageCount - 1),
                     pageCount = pageCount,
                     readingMode = readingMode,
                     onReadingModeChange = onReadingModeChange,
                     onBack = onBack,
+                    onNavigateToChapter = { target -> onNavigateToChapter(target.id) },
                     onSeek = { target -> scope.launch { listState.scrollToItem(target.coerceIn(0, pageCount - 1)) } },
                     onScrubbingChanged = onScrubbingChanged,
                 )
@@ -558,11 +566,14 @@ private fun ContinuousReader(
 private fun BoxScope.ReaderChrome(
     seriesTitle: String,
     chapter: ChapterCard,
+    previousChapter: ChapterCard?,
+    nextChapter: ChapterCard?,
     currentPage: Int,
     pageCount: Int,
     readingMode: ReadingMode,
     onReadingModeChange: (ReadingMode) -> Unit,
     onBack: () -> Unit,
+    onNavigateToChapter: (ChapterCard) -> Unit,
     onSeek: (Int) -> Unit,
     onScrubbingChanged: (Boolean) -> Unit,
     readingDirectionRtl: Boolean = false,
@@ -618,6 +629,26 @@ private fun BoxScope.ReaderChrome(
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 18.dp),
         )
 
+        if (previousChapter != null || nextChapter != null) {
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                ChapterJumpButton(
+                    chapter = previousChapter,
+                    label = stringResource(Res.string.reader_previous_chapter_label),
+                    modifier = Modifier.weight(1f),
+                    onClick = onNavigateToChapter,
+                )
+                ChapterJumpButton(
+                    chapter = nextChapter,
+                    label = stringResource(Res.string.reader_next_chapter_label),
+                    modifier = Modifier.weight(1f),
+                    onClick = onNavigateToChapter,
+                )
+            }
+        }
+
         var dragValue by remember { mutableStateOf<Float?>(null) }
         if (pageCount > 1) {
             val displayPage = (dragValue?.roundToInt() ?: currentPage) + 1
@@ -663,6 +694,45 @@ private fun BoxScope.ReaderChrome(
                 fontFamily = archivo, fontWeight = FontWeight.Bold, fontSize = 10.sp, letterSpacing = 1.sp,
             )
         }
+    }
+}
+
+@Composable
+private fun ChapterJumpButton(
+    chapter: ChapterCard?,
+    label: String,
+    modifier: Modifier = Modifier,
+    onClick: (ChapterCard) -> Unit,
+) {
+    val enabled = chapter != null
+    Column(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (enabled) Color.White.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.03f))
+            .border(1.dp, Color.White.copy(alpha = if (enabled) 0.14f else 0.06f), RoundedCornerShape(14.dp))
+            .clickable(enabled = enabled) { chapter?.let(onClick) }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            label.uppercase(),
+            color = if (enabled) MangaColors.Accent else Color.White.copy(alpha = 0.25f),
+            fontFamily = mangaArchivo(),
+            fontWeight = FontWeight.Bold,
+            fontSize = 9.sp,
+            letterSpacing = 1.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            chapter?.displayName ?: stringResource(Res.string.reader_no_chapter_available),
+            color = if (enabled) Color.White else Color.White.copy(alpha = 0.3f),
+            fontFamily = mangaAnton(),
+            fontSize = 14.sp,
+            lineHeight = 14.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

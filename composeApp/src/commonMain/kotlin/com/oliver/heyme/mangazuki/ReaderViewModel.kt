@@ -63,6 +63,7 @@ class ReaderViewModel(
     val chapter: ChapterCard,
     seriesReadingDirection: ReadingDirection?,
     val seriesTitle: String,
+    initialPreviousChapter: ChapterCard?,
     initialNextChapter: ChapterCard?,
     private val prefs: ReaderPreferences,
     private val deviceId: String,
@@ -117,6 +118,14 @@ class ReaderViewModel(
     val pageAspectRatios: StateFlow<List<Float>> = _pageAspectRatios
 
     val currentPage = MutableStateFlow(chapter.lastPageIndex.coerceAtLeast(0))
+
+    /** The chapter right before this one in the series (same order as the series screen), if
+     * any — used by the reader chrome's chapter-jump controls. Seeded synchronously for the same
+     * reason as [nextChapter]: the first frame should already know whether a jump target exists. */
+    val previousChapter: StateFlow<ChapterCard?> = repository.observeChapters(chapter.seriesId).map { list ->
+        val index = list.indexOfFirst { it.id == chapter.id }
+        if (index > 0) list[index - 1] else null
+    }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), initialPreviousChapter)
 
     /** The chapter right after this one in the series (same order as the series screen), if
      * any — lets the reader offer a "swipe past the last page to continue" transition. Seeded

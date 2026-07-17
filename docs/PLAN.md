@@ -606,6 +606,24 @@ no new client id/secret needed. Not yet verified live end-to-end (sign-in with t
 scope → browse → connect) — doing so needs resetting a device's configured source first, which
 wasn't done against the real library this was developed against.
 
+### 6.5 iCloud Files source (iOS-only, planned)
+
+Deliberately **not** a cross-platform cloud-source peer to OneDrive/Google Drive. Apple does not
+expose a general iCloud Drive REST API suitable for the same "browse an account, list arbitrary
+folders, fetch bytes by id/path" integration shape used on Android for those providers, so the
+right model here is a **Files-picker-backed iOS source only**:
+
+- The user picks an iCloud Drive folder through `UIDocumentPicker`, exactly the same user-consent
+  model already planned for iOS local-folder access.
+- Access persists via **security-scoped bookmarks**, and scanning/reading then treats the granted
+  folder like any other root the app can enumerate/open.
+- Scope is intentionally **iOS only**. There is no matching Android source planned under the same
+  name, because Android has no first-party iCloud Drive provider/API equivalent to Apple's Files
+  integration.
+- Architecturally this belongs closer to the local/bookmark source family than to the OAuth/API
+  sources: no account browser, no custom auth flow, no background cloud sync semantics beyond
+  whatever the Files provider itself exposes through the granted folder URL.
+
 ---
 
 ## 7. Library & series UX
@@ -2099,6 +2117,10 @@ No DB migration (`format` is `TEXT`) — that part held. No source changes — t
   `actual` stubs (NativeSqliteDriver, security-scoped bookmarks, `UIDocumentPicker`,
   `ioDispatcher`), run the bookmark-survival spike (§13), wire `iosApp/`, and add iOS to CI.
   Because logic lives in `commonMain`, this is wiring + platform glue, not a rewrite.
+- **iCloud Files manga source (iOS only)** — when iOS bring-up happens, add a picker-backed source
+  over iCloud Drive folders selected in `UIDocumentPicker`, persisted with security-scoped
+  bookmarks. Explicitly not planned for Android and not blocked on a public iCloud Drive API,
+  because this source is Files-provider-based rather than REST/API-based (§6.5).
 - **CBR/RAR** — until a clean licensed library exists.
 - **Manual metadata editing & custom covers** — §9.1; columns already accommodate it.
 - **AniList progress write-back** — opt-in OAuth2 (PKCE) as a `SyncBackend` variant.
