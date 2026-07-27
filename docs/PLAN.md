@@ -2213,6 +2213,20 @@ No DB migration (`format` is `TEXT`) — that part held. No source changes — t
   the old solid-color background + raster-foreground split (the new artwork is one flat
   full-bleed image, not a layered design, so a raster background with an empty foreground is the
   simpler fit than inventing an artificial safe-zone inset).
+- **Package name: `com.oliver.heyme.yomidojo` (2026-07-27).** Completed the identity migration
+  that the 2026-07-09 display rename deliberately deferred: renamed every module's `namespace`,
+  `composeApp`'s `applicationId`, and the Kotlin package (`com.oliver.heyme.mangazuki` →
+  `.yomidojo`, 137 files across 26 source-set directories, plus the SQLDelight `packageName`
+  and its `.sq` source tree) so the internal codename finally matches the public "YomiDojo"
+  name. `applicationId` changing means Android treats this as a new app — existing installs do
+  not auto-upgrade — and any already-configured Google Cloud OAuth client's package name +
+  debug keystore SHA-1 needs re-registration under the new package (same consequence noted for
+  the 2026-07-03 rename above). The **OneDrive OAuth redirect scheme was deliberately left as
+  `com.oliver.heyme.mangazuki://onedrive-auth`** (in `build.gradle.kts` and the manifest's
+  `RedirectUriReceiverActivity` intent-filter) to avoid also having to update the Azure app
+  registration — noted with a comment at its declaration site. The Google OAuth fallback
+  placeholder (only used when `GOOGLE_OAUTH_CLIENT_ID` is unset) was renamed for consistency,
+  since it isn't tied to a live registration.
 - **Removed the white corner triangle (2026-07-15).** The source artwork had a folded-corner
   triangle baked into its top-right corner; requested removed from every icon. Auto-detected the
   triangle per file (flood-fill from a top-right seed pixel over near-white pixels, deliberately

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Declares which languages this app ships (PLAN.md). Lets Android's per-app language
-     picker (Settings, Apps, MangaZuki, Language, Android 13+) offer German independently
+     picker (Settings, Apps, YomiDojo, Language, Android 13+) offer German independently
      of the device's own system language, and is what LocaleManager and
      `cmd locale set-app-locales` need to accept a per-app override at all. -->
 <locale-config xmlns:android="http://schemas.android.com/apk/res/android">

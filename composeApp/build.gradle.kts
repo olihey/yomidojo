@@ -35,7 +35,7 @@ val googleOAuthRedirectScheme = googleOAuthClientId
     .substringBefore(".apps.googleusercontent.com")
     .takeIf { it.isNotBlank() }
     ?.let { "com.googleusercontent.apps.$it" }
-    ?: "com.oliver.heyme.mangazuki" // placeholder so the manifest merge still succeeds when unset
+    ?: "com.oliver.heyme.yomidojo" // placeholder so the manifest merge still succeeds when unset
 
 // The OneDrive manga source's Azure app (client) id (PLAN.md §6.3) -- a "Mobile and desktop
 // applications" public client, so unlike Google there is no secret at all; PKCE alone secures
@@ -47,6 +47,11 @@ val microsoftOAuthClientId = localProperties.getProperty("MICROSOFT_OAUTH_CLIENT
 // scheme, so this is a fixed constant (also registered as the redirect URI in Azure and
 // declared as an extra RedirectUriReceiverActivity intent-filter in AndroidManifest.xml --
 // three places that must agree, hence a single definition here feeding two of them).
+//
+// Deliberately NOT renamed to the yomidojo package (2026-07-27 rename, PLAN.md §18): this
+// exact string is registered as the redirect URI in Azure, so changing it here would break
+// OneDrive sign-in until the Azure app registration is updated to match — left as the old
+// mangazuki scheme on purpose, independent of applicationId/namespace below.
 val microsoftOAuthRedirectUri = "com.oliver.heyme.mangazuki://onedrive-auth"
 
 kotlin {
@@ -119,11 +124,11 @@ kotlin {
 }
 
 android {
-    namespace = "com.oliver.heyme.mangazuki"
+    namespace = "com.oliver.heyme.yomidojo"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.oliver.heyme.mangazuki"
+        applicationId = "com.oliver.heyme.yomidojo"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
