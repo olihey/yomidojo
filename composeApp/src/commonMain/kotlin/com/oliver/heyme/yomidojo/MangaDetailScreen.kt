@@ -331,7 +331,7 @@ private fun DetailInfoSection(
                 series.description?.let {
                     Text(
                         it, color = Color(0xFFA29C95), fontFamily = archivo, fontSize = 13.sp, lineHeight = 20.sp,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 10.dp),
+                        modifier = Modifier.padding(top = 10.dp),
                     )
                 }
 
