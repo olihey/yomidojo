@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -231,7 +232,13 @@ class LibraryViewModel(
             }
         }
         scope.launch {
-            hasLibraryContent.collect { hasContent ->
+            // drop(1): a fresh StateFlow always replays its stateIn-seeded placeholder (false)
+            // to its first collector before the real DB query can complete, since mapToList
+            // hops onto ioDispatcher -- reacting to that placeholder here would clobber a
+            // "Your Page" start-screen preference on every cold start, before the real content
+            // count is even known. Real empty-library transitions (e.g. a reset) always arrive
+            // as a later emission, so this only skips the one synthetic value.
+            hasLibraryContent.drop(1).collect { hasContent ->
                 if (!hasContent && activeTab.value == StartScreen.YOUR_PAGE) {
                     activeTab.value = StartScreen.LIBRARY
                 }
