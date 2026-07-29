@@ -1,6 +1,7 @@
 package com.oliver.heyme.yomidojo
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -12,6 +13,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import manga_reader.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -90,16 +93,23 @@ private fun providerAttribution(providerId: String?): String? = when (providerId
 }
 
 /** Small overlay label on the series header's banner (PLAN.md §9.3) — only shown once a
- * series is actually matched, so an unmatched series' blank banner stays clean. */
+ * series is actually matched, so an unmatched series' blank banner stays clean. Tapping it opens
+ * [siteUrl] (the matched item's own AniList/Kitsu page) in the system browser via
+ * [LocalUriHandler] -- the simplest cross-platform way to leave the app for an occasional
+ * "view the source" link, no Custom Tabs dependency needed. Only clickable when a URL is actually
+ * known (older matches made before `siteUrl` existed can still be null). */
 @Composable
-fun MetadataAttributionLabel(providerId: String?, modifier: Modifier = Modifier) {
+fun MetadataAttributionLabel(providerId: String?, siteUrl: String?, modifier: Modifier = Modifier) {
     val text = providerAttribution(providerId) ?: return
+    val uriHandler = LocalUriHandler.current
     Text(
         text,
         modifier = modifier
             .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(4.dp))
+            .let { if (siteUrl != null) it.clickable { uriHandler.openUri(siteUrl) } else it }
             .padding(horizontal = 6.dp, vertical = 2.dp),
         color = Color.White,
         style = MaterialTheme.typography.labelSmall,
+        textDecoration = if (siteUrl != null) TextDecoration.Underline else null,
     )
 }

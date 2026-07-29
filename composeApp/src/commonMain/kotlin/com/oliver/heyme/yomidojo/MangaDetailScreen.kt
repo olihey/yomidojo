@@ -190,6 +190,19 @@ fun MangaDetailScreen(
                 }
             }
         }
+        // Composed after (so drawn/hit-tested above) the grid, unlike the rest of DetailBanner --
+        // LazyVerticalGrid's own scrollable surface spans the full screen and otherwise occludes
+        // any touch on the banner underneath, which silently swallowed taps here once the label
+        // became clickable. Same fixed position and scroll-fade as DetailBanner used to apply
+        // when this lived inside it.
+        Box(
+            Modifier.align(Alignment.TopStart).fillMaxWidth().height(BANNER_HEIGHT).graphicsLayer {
+                alpha = if (gridState.firstVisibleItemIndex > 0) 0f
+                else 1f - (gridState.firstVisibleItemScrollOffset / bannerFadePx).coerceIn(0f, 1f)
+            },
+        ) {
+            MetadataAttributionLabel(series.metadataProvider, series.siteUrl, Modifier.align(Alignment.BottomEnd).padding(8.dp))
+        }
         DetailTopBar(onBack, series.favorite, onToggleFavorite, onFixMetadata, archivo)
     }
 }
@@ -249,7 +262,10 @@ private fun DetailBanner(series: Series, modifier: Modifier = Modifier) {
                 Brush.verticalGradient(0f to Color.Transparent, 0.55f to MangaColors.Bg.copy(alpha = 0.55f), 1f to MangaColors.Bg),
             ),
         )
-        MetadataAttributionLabel(series.metadataProvider, Modifier.align(Alignment.BottomEnd).padding(8.dp))
+        // The attribution label itself now lives one level up, composed after (so hit-tested
+        // above) the grid -- see its call site in MangaDetailScreen -- since this Box sits behind
+        // the grid's own full-size scrollable surface and can never receive a tap once the label
+        // became clickable.
     }
 }
 
