@@ -55,6 +55,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -226,134 +227,143 @@ private fun PagedReader(
         val isVertical = readingMode == ReadingMode.VERTICAL_PAGED
         val pairPortrait = maxWidth > maxHeight
         val units = remember(wideFlags, pairPortrait) { buildPageUnits(pageCount, wideFlags, pairPortrait) }
-        val initialUnit = remember(units) { unitIndexForPage(units, viewModel.currentPage.value) }
         val previousChapter by viewModel.previousChapter.collectAsState()
         val nextChapter by viewModel.nextChapter.collectAsState()
         // One extra slot past the real pages previews the next chapter's cover; swiping onto it
         // and letting it settle there switches chapters (PLAN.md §8.1).
         val totalCount = units.size + if (nextChapter != null) 1 else 0
 
-        val pagerState = rememberPagerState(initialPage = initialUnit.coerceIn(0, units.size - 1)) { totalCount }
-        val scope = rememberCoroutineScope()
-        var zoomedIn by remember { mutableStateOf(false) }
+        // Keyed on `units` itself: rotating the device (or late-arriving page geometry) re-runs
+        // buildPageUnits with a different portrait/landscape spread-pairing, which shifts what
+        // each raw unit index means. A plain `remember`ed PagerState would keep its old numeric
+        // page across that reflow and land on the wrong spot -- the reported "pages jump on
+        // rotation" bug. `key(units)` instead tears down and re-seeds the whole pager (and its
+        // effects) from `viewModel.currentPage` -- the one thing that still means the same real
+        // manga page under either grouping -- so the visible page never changes across the flip.
+        key(units) {
+            val initialUnit = remember { unitIndexForPage(units, viewModel.currentPage.value) }
+            val pagerState = rememberPagerState(initialPage = initialUnit.coerceIn(0, units.size - 1)) { totalCount }
+            val scope = rememberCoroutineScope()
+            var zoomedIn by remember { mutableStateOf(false) }
 
-        LaunchedEffect(pagerState, units) {
-            snapshotFlow { pagerState.currentPage }.collect { unitIndex ->
-                if (unitIndex < units.size) viewModel.onPageChanged(progressIndexFor(units.getOrNull(unitIndex)))
-            }
-        }
-        // A page always starts unzoomed, so leaving it should re-enable pager swiping.
-        LaunchedEffect(pagerState.currentPage) { zoomedIn = false }
-
-        // Only fires once the swipe settles ON the preview slot (not just passing through
-        // during a fling), so a quick overscroll-and-snap-back doesn't switch chapters.
-        LaunchedEffect(pagerState, units.size, nextChapter) {
-            snapshotFlow { pagerState.settledPage }.collect { settled ->
-                val next = nextChapter
-                if (next != null && settled == units.size) onNavigateToChapter(next.id)
-            }
-        }
-
-        DisposableEffect(readingDirectionRtl, isVertical, units.size) {
-            VolumeKeyBus.onVolumeKey = { down ->
-                // "Down" always turns to the next page in reading order — vertical top-to-bottom
-                // has no reversed direction; horizontal still respects LTR/RTL.
-                val forward = if (isVertical) down else (if (readingDirectionRtl) !down else down)
-                scrollBy(pagerState, scope, if (forward) 1 else -1, units.size)
-                true
-            }
-            onDispose { VolumeKeyBus.onVolumeKey = null }
-        }
-
-        val pageContent: @Composable PagerScope.(Int) -> Unit = { unitIndex ->
-            if (unitIndex >= units.size) {
-                nextChapter?.let { NextChapterPreview(it) }
-            } else {
-                val onZoneTap: (TapZone) -> Unit = { zone ->
-                    when (zone) {
-                        TapZone.FORWARD -> scrollBy(pagerState, scope, 1, units.size)
-                        TapZone.BACKWARD -> scrollBy(pagerState, scope, -1, units.size)
-                        TapZone.MENU -> onToggleChrome()
-                    }
+            LaunchedEffect(pagerState) {
+                snapshotFlow { pagerState.currentPage }.collect { unitIndex ->
+                    if (unitIndex < units.size) viewModel.onPageChanged(progressIndexFor(units.getOrNull(unitIndex)))
                 }
-                when (val unit = units[unitIndex]) {
-                    is PageUnit.Single -> ReaderPage(
-                        viewModel.pageModel, viewModel.chapter.size, unit.index, readingDirectionRtl,
-                        viewModel.invertTapZones, isVertical, onZoneTap, onZoomChanged = { zoomedIn = it },
-                    )
-                    is PageUnit.Spread -> {
-                        val order = if (readingDirectionRtl) listOf(unit.second, unit.first) else listOf(unit.first, unit.second)
-                        Row(Modifier.fillMaxSize()) {
-                            order.forEach { pageIndex ->
-                                ReaderPage(
-                                    viewModel.pageModel,
-                                    viewModel.chapter.size,
-                                    pageIndex,
-                                    readingDirectionRtl,
-                                    viewModel.invertTapZones,
-                                    isVertical,
-                                    onZoneTap,
-                                    onZoomChanged = { zoomedIn = it },
-                                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                                )
+            }
+            // A page always starts unzoomed, so leaving it should re-enable pager swiping.
+            LaunchedEffect(pagerState.currentPage) { zoomedIn = false }
+
+            // Only fires once the swipe settles ON the preview slot (not just passing through
+            // during a fling), so a quick overscroll-and-snap-back doesn't switch chapters.
+            LaunchedEffect(pagerState, nextChapter) {
+                snapshotFlow { pagerState.settledPage }.collect { settled ->
+                    val next = nextChapter
+                    if (next != null && settled == units.size) onNavigateToChapter(next.id)
+                }
+            }
+
+            DisposableEffect(readingDirectionRtl, isVertical) {
+                VolumeKeyBus.onVolumeKey = { down ->
+                    // "Down" always turns to the next page in reading order — vertical top-to-bottom
+                    // has no reversed direction; horizontal still respects LTR/RTL.
+                    val forward = if (isVertical) down else (if (readingDirectionRtl) !down else down)
+                    scrollBy(pagerState, scope, if (forward) 1 else -1, units.size)
+                    true
+                }
+                onDispose { VolumeKeyBus.onVolumeKey = null }
+            }
+
+            val pageContent: @Composable PagerScope.(Int) -> Unit = { unitIndex ->
+                if (unitIndex >= units.size) {
+                    nextChapter?.let { NextChapterPreview(it) }
+                } else {
+                    val onZoneTap: (TapZone) -> Unit = { zone ->
+                        when (zone) {
+                            TapZone.FORWARD -> scrollBy(pagerState, scope, 1, units.size)
+                            TapZone.BACKWARD -> scrollBy(pagerState, scope, -1, units.size)
+                            TapZone.MENU -> onToggleChrome()
+                        }
+                    }
+                    when (val unit = units[unitIndex]) {
+                        is PageUnit.Single -> ReaderPage(
+                            viewModel.pageModel, viewModel.chapter.size, unit.index, readingDirectionRtl,
+                            viewModel.invertTapZones, isVertical, onZoneTap, onZoomChanged = { zoomedIn = it },
+                        )
+                        is PageUnit.Spread -> {
+                            val order = if (readingDirectionRtl) listOf(unit.second, unit.first) else listOf(unit.first, unit.second)
+                            Row(Modifier.fillMaxSize()) {
+                                order.forEach { pageIndex ->
+                                    ReaderPage(
+                                        viewModel.pageModel,
+                                        viewModel.chapter.size,
+                                        pageIndex,
+                                        readingDirectionRtl,
+                                        viewModel.invertTapZones,
+                                        isVertical,
+                                        onZoneTap,
+                                        onZoomChanged = { zoomedIn = it },
+                                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                                    )
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        // Keeps the adjacent page composed (and its AsyncImage fetching) before it's actually
-        // scrolled into view, so the fetch/decode already happened by the time the user swipes —
-        // matters most on a network source (SMB, PLAN.md §6.2), where a fetch is a real
-        // round-trip instead of a fast local read.
-        if (isVertical) {
-            VerticalPager(
-                state = pagerState,
-                userScrollEnabled = !zoomedIn,
-                beyondViewportPageCount = 1,
-                modifier = Modifier.fillMaxSize(),
-                pageContent = pageContent,
-            )
-        } else {
-            HorizontalPager(
-                state = pagerState,
-                reverseLayout = readingDirectionRtl,
-                userScrollEnabled = !zoomedIn,
-                beyondViewportPageCount = 1,
-                modifier = Modifier.fillMaxSize(),
-                pageContent = pageContent,
-            )
-        }
-
-        AnimatedVisibility(
-            visible = showChrome && pagerState.currentPage < units.size,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            // Inner Box restores the BoxScope that ReaderChrome's `.align` calls need
-            // (AnimatedVisibility's content runs in AnimatedVisibilityScope, not BoxScope).
-            Box(Modifier.fillMaxSize()) {
-                val rawPage = progressIndexFor(units.getOrNull(pagerState.currentPage))
-                ReaderChrome(
-                    seriesTitle = viewModel.seriesTitle,
-                    chapter = viewModel.chapter,
-                    previousChapter = previousChapter,
-                    nextChapter = nextChapter,
-                    currentPage = rawPage,
-                    pageCount = pageCount,
-                    readingMode = readingMode,
-                    readingDirectionRtl = readingDirectionRtl,
-                    invertTapZones = viewModel.invertTapZones,
-                    onReadingModeChange = viewModel::setReadingMode,
-                    onBack = onBack,
-                    onNavigateToChapter = { target -> onNavigateToChapter(target.id) },
-                    onSeek = { target ->
-                        scope.launch { pagerState.scrollToPage(unitIndexForPage(units, target)) }
-                    },
-                    onScrubbingChanged = onScrubbingChanged,
+            // Keeps the adjacent page composed (and its AsyncImage fetching) before it's actually
+            // scrolled into view, so the fetch/decode already happened by the time the user swipes —
+            // matters most on a network source (SMB, PLAN.md §6.2), where a fetch is a real
+            // round-trip instead of a fast local read.
+            if (isVertical) {
+                VerticalPager(
+                    state = pagerState,
+                    userScrollEnabled = !zoomedIn,
+                    beyondViewportPageCount = 1,
+                    modifier = Modifier.fillMaxSize(),
+                    pageContent = pageContent,
                 )
+            } else {
+                HorizontalPager(
+                    state = pagerState,
+                    reverseLayout = readingDirectionRtl,
+                    userScrollEnabled = !zoomedIn,
+                    beyondViewportPageCount = 1,
+                    modifier = Modifier.fillMaxSize(),
+                    pageContent = pageContent,
+                )
+            }
+
+            AnimatedVisibility(
+                visible = showChrome && pagerState.currentPage < units.size,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                // Inner Box restores the BoxScope that ReaderChrome's `.align` calls need
+                // (AnimatedVisibility's content runs in AnimatedVisibilityScope, not BoxScope).
+                Box(Modifier.fillMaxSize()) {
+                    val rawPage = progressIndexFor(units.getOrNull(pagerState.currentPage))
+                    ReaderChrome(
+                        seriesTitle = viewModel.seriesTitle,
+                        chapter = viewModel.chapter,
+                        previousChapter = previousChapter,
+                        nextChapter = nextChapter,
+                        currentPage = rawPage,
+                        pageCount = pageCount,
+                        readingMode = readingMode,
+                        readingDirectionRtl = readingDirectionRtl,
+                        invertTapZones = viewModel.invertTapZones,
+                        onReadingModeChange = viewModel::setReadingMode,
+                        onBack = onBack,
+                        onNavigateToChapter = { target -> onNavigateToChapter(target.id) },
+                        onSeek = { target ->
+                            scope.launch { pagerState.scrollToPage(unitIndexForPage(units, target)) }
+                        },
+                        onScrubbingChanged = onScrubbingChanged,
+                    )
+                }
             }
         }
     }
