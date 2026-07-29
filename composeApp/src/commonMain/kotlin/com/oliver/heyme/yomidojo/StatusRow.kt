@@ -1,10 +1,12 @@
 package com.oliver.heyme.yomidojo
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -13,8 +15,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import manga_reader.composeapp.generated.resources.*
 import org.jetbrains.compose.resources.stringResource
@@ -97,19 +102,50 @@ private fun providerAttribution(providerId: String?): String? = when (providerId
  * [siteUrl] (the matched item's own AniList/Kitsu page) in the system browser via
  * [LocalUriHandler] -- the simplest cross-platform way to leave the app for an occasional
  * "view the source" link, no Custom Tabs dependency needed. Only clickable when a URL is actually
- * known (older matches made before `siteUrl` existed can still be null). */
+ * known (older matches made before `siteUrl` existed can still be null), in which case the
+ * external-link glyph is also omitted rather than hinting at a link that isn't there. */
 @Composable
 fun MetadataAttributionLabel(providerId: String?, siteUrl: String?, modifier: Modifier = Modifier) {
     val text = providerAttribution(providerId) ?: return
     val uriHandler = LocalUriHandler.current
-    Text(
-        text,
-        modifier = modifier
+    Row(
+        modifier
             .background(Color.Black.copy(alpha = 0.45f), RoundedCornerShape(4.dp))
             .let { if (siteUrl != null) it.clickable { uriHandler.openUri(siteUrl) } else it }
             .padding(horizontal = 6.dp, vertical = 2.dp),
-        color = Color.White,
-        style = MaterialTheme.typography.labelSmall,
-        textDecoration = if (siteUrl != null) TextDecoration.Underline else null,
-    )
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, color = Color.White, style = MaterialTheme.typography.labelSmall)
+        if (siteUrl != null) {
+            Spacer(Modifier.width(3.dp))
+            ExternalLinkGlyph(Color.White, Modifier.size(10.dp))
+        }
+    }
+}
+
+/** A minimal "external link" glyph (diagonal arrow breaking out of a box's top-right corner) --
+ * hand-drawn rather than pulling in material-icons-extended for one icon, same call as
+ * [ReaderScreen]'s [ChevronGlyph]/[HamburgerGlyph]. */
+@Composable
+private fun ExternalLinkGlyph(tint: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val stroke = Stroke(width = size.minDimension * 0.11f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        // Box: bottom-left corner around to bottom-right, up to mid-right -- left open at the
+        // top and top-right so the arrow reads as "breaking out" of it, not a closed square.
+        val box = Path().apply {
+            moveTo(size.width * 0.15f, size.height * 0.4f)
+            lineTo(size.width * 0.15f, size.height * 0.85f)
+            lineTo(size.width * 0.6f, size.height * 0.85f)
+            lineTo(size.width * 0.6f, size.height * 0.55f)
+        }
+        drawPath(box, color = tint, style = stroke)
+        val arrow = Path().apply {
+            moveTo(size.width * 0.45f, size.height * 0.55f)
+            lineTo(size.width * 0.9f, size.height * 0.1f)
+            moveTo(size.width * 0.55f, size.height * 0.1f)
+            lineTo(size.width * 0.9f, size.height * 0.1f)
+            lineTo(size.width * 0.9f, size.height * 0.45f)
+        }
+        drawPath(arrow, color = tint, style = stroke)
+    }
 }
