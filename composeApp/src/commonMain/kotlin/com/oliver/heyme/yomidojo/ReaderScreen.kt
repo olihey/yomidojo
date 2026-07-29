@@ -182,6 +182,9 @@ fun ReaderScreen(
                 onScrubbingChanged = { isScrubbing = it },
                 onBack = onBack,
                 onNavigateToChapter = onNavigateToChapter,
+                // Only an in-reader chapter switch (not a fresh series/Your Page open) should
+                // carry over the last zoom scale -- see ContinuousZoomState.
+                isChapterSwitch = !showChromeInitially,
             )
         } else {
             PagedReader(
@@ -369,6 +372,17 @@ private fun PagedReader(
     }
 }
 
+/** Carries the webtoon (VERTICAL_CONTINUOUS) zoom scale across an in-reader chapter switch
+ * (PLAN.md §8.1) -- switching chapters pushes a brand-new nav-compose destination, so the
+ * [Zoomable] wrapping [ContinuousReader]'s whole strip would otherwise reset to 1x on every
+ * swipe into the next chapter. Only consulted when the reader was entered via a chapter switch,
+ * not a fresh series/Your Page open (see `isChapterSwitch`) -- an unrelated earlier read's
+ * leftover scale should never leak into a deliberately fresh open. Paged mode's per-page zoom is
+ * intentionally unaffected ("a page always starts unzoomed"). */
+private object ContinuousZoomState {
+    var scale: Float = 1f
+}
+
 /** VERTICAL_CONTINUOUS (webtoon): every page stacked in one continuously scrollable column, no
  * snapping. Simpler interaction than the paged modes — a single tap anywhere toggles the chrome;
  * the same double-tap/pinch zoom as the paged modes applies to the *whole column at once*
@@ -389,6 +403,9 @@ private fun ContinuousReader(
     onScrubbingChanged: (Boolean) -> Unit,
     onBack: () -> Unit,
     onNavigateToChapter: (String) -> Unit,
+    // Whether this composable instance was entered via an in-reader chapter switch rather than
+    // a fresh open -- gates whether ContinuousZoomState's carried-over scale applies at all.
+    isChapterSwitch: Boolean,
 ) {
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = viewModel.currentPage.value.coerceIn(0, pageCount - 1))
     val scope = rememberCoroutineScope()
@@ -430,11 +447,21 @@ private fun ContinuousReader(
             val fullWidthPx = with(density) { maxWidth.toPx() }
             val cumulativeHeights = remember(pageAspectRatios, fullWidthPx) {
                 FloatArray(pageCount + 1).also { heights ->
-                    for (i in 0 until pageCount) heights[i + 1] = heights[i] + fullWidthPx / pageAspectRatios[i]
+                    // pageAspectRatios can briefly trail pageCount -- a cached chapter.pageCount
+                    // seeds ReaderViewModel's pageCount synchronously at construction, while
+                    // pageAspectRatios only catches up once its own async coroutine runs, so this
+                    // can render with pageAspectRatios still emptyList(). 1f (square) matches the
+                    // same seeded default the view model itself uses for a page whose real aspect
+                    // ratio isn't known yet -- this just recomputes once the real values land.
+                    for (i in 0 until pageCount) heights[i + 1] = heights[i] + fullWidthPx / pageAspectRatios.getOrElse(i) { 1f }
                 }
             }
             Zoomable(
                 key = Unit,
+                // Only an in-reader chapter switch carries the previous chapter's scale over —
+                // a fresh open (series screen, Your Page) always starts at 1x regardless of
+                // whatever's left in ContinuousZoomState from an unrelated earlier read.
+                initialScale = remember { if (isChapterSwitch) ContinuousZoomState.scale else 1f },
                 onZoomChanged = {},
                 onGesture = { hasInteracted = true },
                 modifier = Modifier.fillMaxSize(),
@@ -484,6 +511,10 @@ private fun ContinuousReader(
                     }
                 },
             ) { scale, offset ->
+                // Mirrors every real scale change (pinch in/out, double-tap in, double-tap
+                // reset) into ContinuousZoomState, so the *next* chapter switch's Zoomable can
+                // seed itself from wherever this one ended up.
+                LaunchedEffect(scale) { ContinuousZoomState.scale = scale }
                 // Zooming in scales the whole rendered column as one unit (graphicsLayer, panning
                 // via offset, scroll disabled) — the same model the paged modes use. Zooming out
                 // can't use that trick: shrinking a fixed-size already-laid-out column with a
@@ -523,7 +554,9 @@ private fun ContinuousReader(
                             // LazyColumn kept remeasuring to keep the viewport filled and walked
                             // the scroll position forward with no user input, landing on the last
                             // page on open.
-                            aspectRatio = pageAspectRatios[index],
+                            // See cumulativeHeights above -- pageAspectRatios can briefly trail
+                            // pageCount, so this needs the same safe-default fallback.
+                            aspectRatio = pageAspectRatios.getOrElse(index) { 1f },
                             widthFraction = if (zoomedIn) 1f else scale,
                         )
                     }
@@ -1015,6 +1048,10 @@ private fun Zoomable(
     onZoomChanged: (Boolean) -> Unit,
     onGesture: () -> Unit,
     modifier: Modifier,
+    // Starting scale for this instance -- 1f for every ReaderPage (per-page usage), or
+    // ContinuousZoomState's carried-over value when ContinuousReader re-seeds after a chapter
+    // switch. Only read once, on this composable's first composition (see the `remember` below).
+    initialScale: Float = 1f,
     tapGestures: suspend PointerInputScope.(
         scale: () -> Float,
         applyZoom: (Float, Offset, Offset) -> Unit,
@@ -1036,7 +1073,7 @@ private fun Zoomable(
 ) {
     // Keyed so zoom/pan resets when the pager moves to a different page (per-page usage) — the
     // whole-strip usage keys on a constant, since one shared zoom state covers every page.
-    var scale by remember(key) { mutableStateOf(1f) }
+    var scale by remember(key) { mutableStateOf(initialScale) }
     var offset by remember(key) { mutableStateOf(Offset.Zero) }
     val scope = rememberCoroutineScope()
 
