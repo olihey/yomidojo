@@ -180,6 +180,23 @@ android {
             if (releaseKeystorePath.isNotBlank()) {
                 signingConfig = signingConfigs.getByName("release")
             }
+            // Play Console flags a Play-bound release with neither of these as missing
+            // recommended metadata (2026-07-30): shrinking without a mapping file makes crash
+            // stack traces useless, and native code without debug symbols can't be
+            // symbolicated at all. isMinifyEnabled here is R8's default rules
+            // (proguard-android-optimize.txt) plus our own proguard-rules.pro for the
+            // reflection/JNI/ServiceLoader-reliant libraries in the dependency graph (AppAuth,
+            // Ktor's OkHttp engine, pdfiumandroid, Tink, smbj) -- everything else in the stack
+            // (Coil, SQLDelight, AndroidX, Compose) ships its own consumer rules already.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            ndk {
+                // FULL keeps line numbers too (not just the symbol table), so an on-device
+                // native crash on Play Console's dashboard can be traced back to source, not
+                // just a bare, unsymbolicated address.
+                debugSymbolLevel = "FULL"
+            }
         }
     }
 
