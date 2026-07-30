@@ -27,7 +27,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.oliver.heyme.yomidojo.core.scanner"
+    namespace = "com.oliverheyme.yomidojo.core.scanner"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     defaultConfig {
         minSdk = libs.versions.android.minSdk.get().toInt()

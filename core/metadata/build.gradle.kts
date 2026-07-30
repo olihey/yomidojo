@@ -26,7 +26,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.oliver.heyme.yomidojo.core.metadata"
+    namespace = "com.oliverheyme.yomidojo.core.metadata"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
 }

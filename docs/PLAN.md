@@ -2227,6 +2227,16 @@ No DB migration (`format` is `TEXT`) — that part held. No source changes — t
   registration — noted with a comment at its declaration site. The Google OAuth fallback
   placeholder (only used when `GOOGLE_OAUTH_CLIENT_ID` is unset) was renamed for consistency,
   since it isn't tied to a live registration.
+- **Package name: `com.oliverheyme.yomidojo` (2026-07-30).** Merged `oliver`/`heyme` into one
+  `oliverheyme` segment (`com.oliver.heyme.yomidojo` → `com.oliverheyme.yomidojo`), again across
+  every module's `namespace`/`applicationId`, the Kotlin package (137 files, 26 directories),
+  and the SQLDelight `packageName`/source tree. Lower-risk than the 2026-07-27 rename: nothing
+  had shipped to Play Store under the old package yet (no installed-user upgrade break), and no
+  OAuth re-registration was needed for either provider — Google's OAuth client here is a
+  "Desktop app" type, which (unlike "Android" type) has no package-name/SHA-1 binding at all
+  (§18), and the Microsoft/OneDrive redirect is already a hardcoded scheme literal decoupled
+  from `applicationId`, deliberately left untouched by the 2026-07-27 rename and untouched again
+  here for the same reason.
 - **Removed the white corner triangle (2026-07-15).** The source artwork had a folded-corner
   triangle baked into its top-right corner; requested removed from every icon. Auto-detected the
   triangle per file (flood-fill from a top-right seed pixel over near-white pixels, deliberately

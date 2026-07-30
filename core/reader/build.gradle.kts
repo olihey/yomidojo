@@ -31,7 +31,7 @@ kotlin {
 }
 
 android {
-    namespace = "com.oliver.heyme.yomidojo.core.reader"
+    namespace = "com.oliverheyme.yomidojo.core.reader"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
     defaultConfig { minSdk = libs.versions.android.minSdk.get().toInt() }
 }

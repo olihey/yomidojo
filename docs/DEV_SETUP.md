@@ -58,7 +58,7 @@ Run button: with the Android plugin a `composeApp` run config appears — pick t
 Or via Gradle / terminal:
 ```
 ./gradlew :composeApp:installDebug
-adb shell am start -n com.oliver.heyme.yomidojo/.MainActivity
+adb shell am start -n com.oliverheyme.yomidojo/.MainActivity
 ```
 APK-only: `./gradlew :composeApp:assembleDebug` → `composeApp/build/outputs/apk/debug/`.
 

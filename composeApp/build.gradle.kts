@@ -35,7 +35,7 @@ val googleOAuthRedirectScheme = googleOAuthClientId
     .substringBefore(".apps.googleusercontent.com")
     .takeIf { it.isNotBlank() }
     ?.let { "com.googleusercontent.apps.$it" }
-    ?: "com.oliver.heyme.yomidojo" // placeholder so the manifest merge still succeeds when unset
+    ?: "com.oliverheyme.yomidojo" // placeholder so the manifest merge still succeeds when unset
 
 // The OneDrive manga source's Azure app (client) id (PLAN.md §6.3) -- a "Mobile and desktop
 // applications" public client, so unlike Google there is no secret at all; PKCE alone secures
@@ -124,11 +124,11 @@ kotlin {
 }
 
 android {
-    namespace = "com.oliver.heyme.yomidojo"
+    namespace = "com.oliverheyme.yomidojo"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.oliver.heyme.yomidojo"
+        applicationId = "com.oliverheyme.yomidojo"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1

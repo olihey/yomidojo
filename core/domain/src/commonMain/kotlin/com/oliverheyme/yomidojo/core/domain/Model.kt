@@ -1,0 +1,149 @@
+package com.oliverheyme.yomidojo.core.domain
+
+/** Chapter container format (PLAN.md §11, §16). */
+enum class ChapterFormat { IMAGE_DIR, CBZ, PDF }
+
+/** Reading modes — manga defaults to PAGED_RTL; direction flows through the pager. */
+enum class ReadingMode { PAGED_LTR, PAGED_RTL, VERTICAL_PAGED, VERTICAL_CONTINUOUS }
+
+enum class ReadingDirection { LTR, RTL }
+
+/** Optional source capabilities (PLAN.md §6) — promise only what the weakest backend has.
+ * RANGE_READ means seeking within a file is cheap enough that a reader shouldn't download
+ * the whole thing up front (PLAN.md §6.1/§11) — true for SMB, not worth it for local SAF. */
+enum class SourceCapability { RANDOM_ACCESS, DELTA_SYNC, WATCH, RANGE_READ }
+
+data class Source(
+    val id: String,
+    val type: String,            // LOCAL | ONEDRIVE | WEBDAV ...
+    val displayName: String,
+    val configJson: String,      // granted root (SAF URI / iOS bookmark), creds ref
+    val syncToken: String? = null,
+)
+
+data class Series(
+    val id: String,              // deterministic: hash(source_id + normalized locator)
+    val title: String,
+    val sortTitle: String,       // frozen-normalized; also the sync fallback key (PLAN.md §10)
+    val author: String? = null,
+    val description: String? = null,
+    val coverPath: String? = null,
+    val startYear: Int? = null,
+    val readingDirection: ReadingDirection? = null,
+    val externalId: String? = null,   // AniList Media id; primary sync key
+    val dateAdded: Long,
+    val lastScanned: Long? = null,
+    // AniList's per-language titles, once matched (PLAN.md §9) — feed the "series title"
+    // display setting; each is null if AniList didn't have that language for this work.
+    val titleRomaji: String? = null,
+    val titleEnglish: String? = null,
+    val titleNative: String? = null,
+    // Remaining AniList fields worth keeping locally (PLAN.md §9), all null until matched.
+    val status: String? = null,        // AniList MediaStatus: FINISHED, RELEASING, ...
+    val format: String? = null,        // AniList MediaFormat: MANGA, NOVEL, ONE_SHOT, ...
+    val genres: List<String> = emptyList(),
+    val tags: List<String> = emptyList(),
+    val isAdult: Boolean = false,
+    val averageScore: Int? = null,     // 0-100
+    val siteUrl: String? = null,
+    val bannerPath: String? = null,    // app-internal storage path for the downloaded banner
+    val metadataProvider: String? = null, // which provider matched this: ANILIST | KITSU (§9.3)
+    val favorite: Boolean = false,     // user's heart toggle (PLAN.md §10 favorites sync)
+)
+
+data class Chapter(
+    val id: String,              // deterministic: hash(source_id + normalized locator)
+    val seriesId: String,
+    val sourceId: String,
+    val locator: String,
+    val format: ChapterFormat,
+    val displayName: String,
+    val volume: Double? = null,  // from the PARSER (null → flat list)
+    val number: Double? = null,  // from the PARSER; supports 12.5
+    val pageCount: Int? = null,
+    val size: Long? = null,
+    val changeToken: String? = null,
+    val dateAdded: Long,
+)
+
+data class ReadingProgress(
+    val chapterId: String,
+    val lastPageIndex: Int = 0,
+    val completed: Boolean = false,
+    val updatedAt: Long,         // recently-read sort AND sync last-write-wins
+    val deviceId: String? = null,
+)
+
+/**
+ * One chapter's progress plus its cross-device sync identity (PLAN.md §10) -- deliberately
+ * plain-primitive-typed (no `core:sync` types here) so `core:data` doesn't need a dependency
+ * on `core:sync`; `composeApp`'s `ProgressSyncCoordinator` converts this to/from
+ * `core.sync.ProgressRecord` at the boundary, the same way a `MetadataProvider` converts its
+ * own DTOs to/from `RemoteWork`.
+ */
+data class SyncProgressRow(
+    val provider: String?,        // series.metadata_provider: "ANILIST" | "KITSU" | null
+    val externalId: String?,      // series.external_id
+    val normalizedTitle: String,  // series.sort_title (frozen normalization, §10)
+    val volume: Double?,
+    val number: Double?,
+    val completed: Boolean,
+    val lastPageIndex: Int,
+    val updatedAt: Long,
+    val deviceId: String?,
+)
+
+/** One manual Fix Metadata action's before/after (PLAN.md §10) -- the series' raw scanned
+ * title exactly as it stood right before the fix, paired with the (provider, externalId) the
+ * user confirmed. Synced separately from reading progress (a different Drive file) to help
+ * bridge devices that haven't matched -- or scanned under a different raw title -- that series
+ * themselves yet. Plain-primitive-typed for the same `core:data`/`core:sync` layering reason
+ * as [SyncProgressRow]. */
+data class MetadataAliasRow(
+    val normalizedOldTitle: String,
+    val provider: String,
+    val externalId: String,
+    val updatedAt: Long,
+    val deviceId: String?,
+)
+
+/** One series' favorite state plus its cross-device sync identity (PLAN.md §10 favorites
+ * sync). [favorited] false rows exist and sync too -- an un-favorite is an explicit
+ * tombstone with its own [updatedAt], not record absence (the progress-v3 lesson), so it can
+ * win a merge against an older remote favorite. Plain-primitive-typed for the same
+ * `core:data`/`core:sync` layering reason as [SyncProgressRow]. */
+data class FavoriteRow(
+    val normalizedTitle: String,  // series.sort_title (frozen normalization, §10)
+    val provider: String?,        // series.metadata_provider: "ANILIST" | "KITSU" | null
+    val externalId: String?,      // series.external_id
+    val favorited: Boolean,
+    val updatedAt: Long,
+    val deviceId: String?,
+)
+
+// Apply-side twins of SyncProgressRow/MetadataAliasRow/FavoriteRow (PLAN.md sync perf,
+// 2026-07-12) -- LibraryRepository's applyProgressWinners/applyMetadataAliasWinners/
+// applyFavoriteWinners each take a whole batch of these in one transaction rather than one
+// per row, so a full-library sync (tens of thousands of chapters) pays one disk fsync for the
+// whole pass instead of one per row.
+data class ProgressApplyEntry(
+    val chapterId: String,
+    val lastPageIndex: Int,
+    val completed: Boolean,
+    val updatedAt: Long,
+)
+
+data class MetadataAliasApplyEntry(
+    val normalizedOldTitle: String,
+    val provider: String,
+    val externalId: String,
+    val updatedAt: Long,
+    val deviceId: String,
+)
+
+data class FavoriteApplyEntry(
+    val seriesId: String,
+    val favorited: Boolean,
+    val updatedAt: Long,
+    val deviceId: String,
+)
