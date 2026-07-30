@@ -41,7 +41,18 @@
 -dontwarn com.hierynomus.**
 -dontwarn org.bouncycastle.**
 -dontwarn org.slf4j.**
-# smbj's event bus (MBassador) has an optional javax.el (Expression Language) integration path
-# that references classes with no Android implementation -- genuinely unused here (smbj never
-# exercises it), R8's own missing_rules.txt output confirms these are the only gap.
+# smbj's event bus (MBassador, net.engio.mbassy) has an optional javax.el (Expression Language)
+# integration path that references classes with no Android implementation -- genuinely unused
+# here (smbj never exercises it), R8's own missing_rules.txt output confirms these are the only
+# gap on the javax.el side.
 -dontwarn javax.el.**
+
+# MBassador itself resolves each subscribed handler's invocation strategy by reflectively
+# looking up a constructor with an exact parameter-type signature (SubscriptionContext) at
+# runtime (PLAN.md §6.2, found via a real device crash: NoSuchMethodException on a minified/
+# renamed handler class, since -keep com.hierynomus.** above doesn't cover this separate
+# transitive package). Needs full names *and* full constructor signatures kept, not just
+# existence -- a plain -keep still lets R8 rewrite descriptors that this lookup matches on.
+-keep class net.engio.mbassy.** { *; }
+-keepclassmembers class net.engio.mbassy.** { *; }
+-dontwarn net.engio.mbassy.**
