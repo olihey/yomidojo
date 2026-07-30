@@ -54,6 +54,17 @@ val microsoftOAuthClientId = localProperties.getProperty("MICROSOFT_OAUTH_CLIENT
 // mangazuki scheme on purpose, independent of applicationId/namespace below.
 val microsoftOAuthRedirectUri = "com.oliver.heyme.mangazuki://onedrive-auth"
 
+// Play Store release signing (2026-07-30) -- same local.properties/gitignore treatment as the
+// OAuth secrets above, except the keystore *file itself* also lives outside the repo entirely
+// (not just gitignored) since it's the one artifact that can never be regenerated if lost: losing
+// it means losing the ability to ship any future update to this applicationId. Missing/blank
+// just means `assembleRelease`/`bundleRelease` fall back to no signing config (release build
+// still compiles, just unsigned -- fine for local testing, not for a Play Console upload).
+val releaseKeystorePath = localProperties.getProperty("RELEASE_KEYSTORE_PATH", "")
+val releaseKeystorePassword = localProperties.getProperty("RELEASE_KEYSTORE_PASSWORD", "")
+val releaseKeyAlias = localProperties.getProperty("RELEASE_KEY_ALIAS", "")
+val releaseKeyPassword = localProperties.getProperty("RELEASE_KEY_PASSWORD", "")
+
 kotlin {
     androidTarget()
 
@@ -147,6 +158,29 @@ android {
 
     buildFeatures {
         buildConfig = true
+    }
+
+    signingConfigs {
+        // Only registered when a real keystore path is configured, so a checkout without
+        // local.properties' RELEASE_KEYSTORE_* entries still builds debug (and even release,
+        // just unsigned) with no error -- same "missing just means a feature is off" treatment
+        // as the OAuth credentials above.
+        if (releaseKeystorePath.isNotBlank()) {
+            create("release") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (releaseKeystorePath.isNotBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
     }
 
     compileOptions {
