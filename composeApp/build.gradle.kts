@@ -142,8 +142,8 @@ android {
         applicationId = "com.oliverheyme.yomidojo"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         // AppAuth's own manifest (pulled in transitively via core:sync, PLAN.md §10) declares
         // its redirect-catching activity with this placeholder -- required for the manifest
         // merge to succeed at all, independent of whether real OAuth credentials are wired in
