@@ -93,6 +93,7 @@ import coil3.compose.AsyncImage
 import com.oliverheyme.yomidojo.core.data.ChapterCard
 import com.oliverheyme.yomidojo.core.domain.ReadingMode
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -1076,12 +1077,22 @@ private fun Zoomable(
     var scale by remember(key) { mutableStateOf(initialScale) }
     var offset by remember(key) { mutableStateOf(Offset.Zero) }
     val scope = rememberCoroutineScope()
+    // The two gesture detectors below run as independent pointerInput coroutines, so a
+    // double-tap's *first* tap-up is also a (single-finger, no-op) pinch gesture ending on its
+    // own -- if scale was already < 1f at that point, recenter()'s 200ms animation starts before
+    // detectTapGestures has even recognized the second tap. Without tracking and cancelling that
+    // job, its in-flight animateTo callback keeps overwriting `offset` for the rest of those
+    // 200ms *after* resetZoom()/applyZoom() already ran, clobbering the fresh value with stale
+    // numbers computed for the old zoomed-out scale -- exactly what showed up as "double-tap
+    // while zoomed out doesn't end up centered."
+    var recenterJob: Job? by remember(key) { mutableStateOf(null) }
 
     // Pinching continuously through scale 1 should feel seamless in either direction, so this
     // never snaps offset back on its own — only an explicit resetZoom() (double-tap) or
     // recenter() (releasing a zoom-out) touches it, since a pinch that happens to pass through
     // 1x mid-gesture isn't asking to be recentered.
     fun applyZoom(newScale: Float, centroid: Offset, pan: Offset) {
+        recenterJob?.cancel()
         val coerced = newScale.coerceIn(MIN_ZOOM, MAX_ZOOM)
         offset = if (freezeOffsetBelowOne && coerced < 1f) Offset.Zero else zoomOffset(offset, scale, coerced, centroid, pan)
         val old = scale
@@ -1091,6 +1102,7 @@ private fun Zoomable(
     }
 
     fun resetZoom() {
+        recenterJob?.cancel()
         scale = 1f
         offset = Offset.Zero
         onZoomChanged(false)
@@ -1102,9 +1114,10 @@ private fun Zoomable(
     // from inside awaitPointerEventScope: that scope only permits a restricted set of suspend
     // calls and animateTo isn't one of them.
     fun recenter(size: IntSize) {
+        recenterJob?.cancel()
         val target = Offset(size.width * (1f - scale) / 2f, size.height * (1f - scale) / 2f)
         val start = offset
-        scope.launch {
+        recenterJob = scope.launch {
             Animatable(0f).animateTo(1f, tween(200)) {
                 offset = start + (target - start) * value
             }
