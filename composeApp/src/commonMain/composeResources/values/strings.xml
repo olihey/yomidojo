@@ -109,6 +109,7 @@
     <string name="filter_show_all">Show all</string>
     <string name="filter_show_in_progress">Show in progress</string>
     <string name="filter_show_favorites">Show favorites</string>
+    <string name="filter_show_completed">Show completed</string>
     <string name="filter_hide_read">Show unread</string>
     <string name="filter_hide_matched">Show unmatched</string>
 

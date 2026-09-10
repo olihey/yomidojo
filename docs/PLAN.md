@@ -2297,3 +2297,13 @@ outside English, or a real translation API) gets chosen.
 
 **Not done yet:** translated locales themselves (e.g. `values-de/strings.xml`) — this pass is
 extraction only, per explicit scope ("start with extracting strings + English resources only").
+
+**"Show completed" library filter (2026-09-10).** New `LibraryFilter.SHOW_COMPLETED` entry
+alongside "Show favorites"/"Show in progress" (§7.1) — narrows the Library grid to series whose
+*story* has finished publishing (AniList `status == "FINISHED"`, the same `LibraryCard.status`
+field the metadata-status badge already reads), not reading progress. Deliberately independent
+of "Show in progress"/"Hide read" (those are about how much the user has read; this is about
+whether the source material is done), so a series can match both at once. No schema/data change
+needed — `status` was already synced from AniList; this only adds a filter branch in
+`LibraryViewModel.cards`, a `label()` case in `MangaShelfGrid.kt`, and the
+`filter_show_completed` string (`values/strings.xml` + `values-de/strings.xml`).

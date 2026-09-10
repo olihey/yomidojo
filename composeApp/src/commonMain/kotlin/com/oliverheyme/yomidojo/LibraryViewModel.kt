@@ -49,8 +49,11 @@ enum class SortMode { NAME, RECENTLY_ADDED, RECENTLY_READ, RELEASE_START }
  * read" — hides series that already have an `external_id`, for focusing on what Fix Metadata
  * still needs to look at (PLAN.md §9.1). "Show in progress" narrows to partially-read series —
  * the same definition the "Your Page" dashboard's [LibraryViewModel.inProgress] uses. "Show
- * favorites" narrows to hearted series (PLAN.md §10 favorites). */
-enum class LibraryFilter { SHOW_ALL, SHOW_IN_PROGRESS, SHOW_FAVORITES, HIDE_READ, HIDE_MATCHED }
+ * favorites" narrows to hearted series (PLAN.md §10 favorites). "Show completed" narrows to
+ * series whose *story* has finished publishing (AniList `status == FINISHED`, [LibraryCard.status])
+ * — unrelated to reading progress, so it's a separate filter from "Show in progress"/"Hide read"
+ * and a series can match both. */
+enum class LibraryFilter { SHOW_ALL, SHOW_IN_PROGRESS, SHOW_FAVORITES, SHOW_COMPLETED, HIDE_READ, HIDE_MATCHED }
 
 class LibraryViewModel(
     private val repository: LibraryRepository,
@@ -153,6 +156,7 @@ class LibraryViewModel(
                     // Same "partially read" definition as [inProgress] (Your Page's feed).
                     LibraryFilter.SHOW_IN_PROGRESS -> list = list.filter { it.isInProgress }
                     LibraryFilter.SHOW_FAVORITES -> list = list.filter { it.favorite }
+                    LibraryFilter.SHOW_COMPLETED -> list = list.filter { it.status == "FINISHED" }
                     LibraryFilter.HIDE_READ -> list = list.filter { it.unreadCount > 0 }
                     LibraryFilter.HIDE_MATCHED -> list = list.filter { it.externalId == null }
                 }

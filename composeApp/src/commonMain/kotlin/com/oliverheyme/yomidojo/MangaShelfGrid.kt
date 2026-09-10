@@ -98,6 +98,7 @@ private fun LibraryFilter.label(): String = when (this) {
     LibraryFilter.SHOW_ALL -> stringResource(Res.string.filter_show_all)
     LibraryFilter.SHOW_IN_PROGRESS -> stringResource(Res.string.filter_show_in_progress)
     LibraryFilter.SHOW_FAVORITES -> stringResource(Res.string.filter_show_favorites)
+    LibraryFilter.SHOW_COMPLETED -> stringResource(Res.string.filter_show_completed)
     LibraryFilter.HIDE_READ -> stringResource(Res.string.filter_hide_read)
     LibraryFilter.HIDE_MATCHED -> stringResource(Res.string.filter_hide_matched)
 }
