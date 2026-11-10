@@ -117,6 +117,17 @@ class ReaderViewModel(
     private val _pageAspectRatios = MutableStateFlow<List<Float>>(emptyList())
     val pageAspectRatios: StateFlow<List<Float>> = _pageAspectRatios
 
+    /** How many bands the webtoon reader draws each page as — >1 only for pages too tall to
+     * decode as one bitmap (PLAN.md §8.2). Always 1 for PDFs, whose sizes are in points and
+     * which Pdfium rasterizes to the requested size anyway. */
+    private val _pageSliceCounts = MutableStateFlow<List<Int>>(emptyList())
+    val pageSliceCounts: StateFlow<List<Int>> = _pageSliceCounts
+
+    /** True once [pageAspectRatios] holds probed sizes rather than the square placeholders —
+     * until then the webtoon layout's page heights (and so "is the end on screen") are fiction. */
+    private val _pageGeometryKnown = MutableStateFlow(false)
+    val pageGeometryKnown: StateFlow<Boolean> = _pageGeometryKnown
+
     val currentPage = MutableStateFlow(chapter.lastPageIndex.coerceAtLeast(0))
 
     /** The chapter right before this one in the series (same order as the series screen), if
@@ -197,14 +208,22 @@ class ReaderViewModel(
                 if (count > 0) {
                     val wideFlags = MutableList(count) { false }
                     val aspectRatios = MutableList(count) { 1f }
+                    val sliceCounts = MutableList(count) { 1 }
+                    val isPdf = chapter.format == ChapterFormat.PDF.name
                     for (i in 0 until count) {
                         val size = runCatching { provider.pageSize(i) }.getOrNull() ?: continue
                         if (size.width <= 0f || size.height <= 0f) continue
                         wideFlags[i] = size.width > size.height
                         aspectRatios[i] = size.width / size.height
+                        if (!isPdf) sliceCounts[i] = webtoonSliceCount(size.height)
                     }
+                    // Slice counts before aspect ratios: the reverse order would give one frame
+                    // where a giant page has its full height but is still a single image, which
+                    // starts exactly the oversized decode slicing exists to avoid.
+                    _pageSliceCounts.value = sliceCounts
                     _wideFlags.value = wideFlags
                     _pageAspectRatios.value = aspectRatios
+                    _pageGeometryKnown.value = true
                 }
                 provider.close()
             }.onFailure { t ->
@@ -213,10 +232,19 @@ class ReaderViewModel(
         }
     }
 
-    fun onPageChanged(index: Int) {
+    /** [reachedEnd] is null for the paged modes, where showing the last page means it's read.
+     * The webtoon reader passes whether the bottom of the last page has actually been scrolled
+     * into view — the last page being the *first visible* item isn't enough there, and for a
+     * single-page chapter (a stitched strip) it's true the moment the chapter opens. A chapter
+     * that was already read and reopens at its last page stays read. */
+    fun onPageChanged(index: Int, reachedEnd: Boolean? = null) {
         currentPage.value = index
         val count = _pageCount.value
-        val completed = count > 0 && index >= count - 1
+        val onLastPage = count > 0 && index >= count - 1
+        val completed = when (reachedEnd) {
+            null -> onLastPage
+            else -> reachedEnd || (chapter.completed && onLastPage)
+        }
         scope.launch {
             repository.markProgress(chapter.id, index, completed, deviceId)
             requestSync()

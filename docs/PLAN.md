@@ -978,6 +978,41 @@ when pages merely display:
 
 Tap-zone layout and the volume-key toggle live in settings (multiplatform-settings).
 
+### 8.2 Very tall pages — sliced decoding (fixed 2026-11-10)
+
+Some scanlation CBZs ship a whole chapter as **one stitched strip** (seen live: "We Don't Need a
+Prince" ch. 1–4, a single 690 × ~39,000–48,000 px PNG each). In `VERTICAL_CONTINUOUS` the page is
+laid out at full screen width (~128,000 px tall), so Coil decoded it at full resolution
+(~132 MB ARGB); the hardware bitmap couldn't be allocated (GPU texture height limit, logcat
+`GL_INVALID_VALUE` / "Failed to allocate a hardware bitmap") and the reader stayed black.
+
+**Fix:** the webtoon reader draws any page taller than `MAX_UNSLICED_PAGE_PX` (8192) as a stack of
+equal bands of ≤ `PAGE_SLICE_PX` (4096) source rows — `webtoonSliceCount()` in `MangaPage.kt`,
+computed per page by `ReaderViewModel.pageSliceCounts` from the pixel sizes it already probes
+(PDFs excluded: their sizes are points, and Pdfium rasterizes to the requested size anyway).
+- Still **one `LazyColumn` item per page** — the bands are a `Column` inside `WebtoonPage` with the
+  same total height, so resume position, progress, chapter-end detection and the zoom-out height
+  model are untouched.
+- `MangaPage` gained `slice`/`sliceCount` (also in the Coil cache key); `PageFetcher` decodes a
+  band with `BitmapRegionDecoder` (sampled down only if the source is ≥2× wider than the target),
+  with a 2-entry `RegionDecoderCache` so a page's bands share one read of its bytes.
+- Slice counts are published *before* aspect ratios, and `PageFetcher` downsamples any unsliced
+  request for an over-tall image (`tooTallFallback`) — so the transient whole-page request made
+  before probing finishes, and the paged modes, never attempt the full-height decode either.
+- Paged modes still show such a strip fit-to-screen (a thin sliver) — the right mode for these
+  chapters is webtoon; not changed.
+
+**Follow-up: when the webtoon reader marks a chapter read (2026-11-10).** It used to mark a
+chapter read as soon as the last page became the *first visible* item — for a single-page strip
+that's the moment it opens. Now `ContinuousReader` reports `reachedEnd` to
+`ReaderViewModel.onPageChanged`: true once the bottom of the last page has been on screen, and
+only after the user has touched the reader and real page sizes are known (`pageGeometryKnown`;
+before that the page is a square placeholder whose "bottom" is visible immediately). Sticky for
+the visit, so scrolling back up doesn't un-read it; a chapter that was already read and reopens
+on its last page stays read. Paged modes are unchanged (showing the last page = read). Verified
+on-device: opening an unread one-page strip left it unread; scrolling to its end marked it read,
+and the auto-continued next chapter stayed unread.
+
 ---
 
 ## 9. Metadata — AniList (series data only, no API key)

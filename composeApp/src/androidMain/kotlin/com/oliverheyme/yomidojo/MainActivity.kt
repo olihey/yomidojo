@@ -102,7 +102,11 @@ class MainActivity : ComponentActivity() {
             .components {
                 add(Keyer<MangaCover> { cover, _: Options -> cover.cacheKey })
                 add(CoverFetcher.Factory(source, repository, coversDir, pdfCacheDir))
-                add(Keyer<MangaPage> { page, _: Options -> "${page.model}#${page.index}" })
+                add(
+                    Keyer<MangaPage> { page, _: Options ->
+                        if (page.sliceCount > 1) "${page.model}#${page.index}@${page.slice}/${page.sliceCount}" else "${page.model}#${page.index}"
+                    },
+                )
                 add(PageFetcher.Factory(source, pdfCacheDir))
             }
             // Explicit (rather than relying on Coil's default) so covers/pages extracted

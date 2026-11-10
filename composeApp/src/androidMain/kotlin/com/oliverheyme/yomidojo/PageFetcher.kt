@@ -1,5 +1,9 @@
 package com.oliverheyme.yomidojo
 
+import android.graphics.BitmapFactory
+import android.graphics.BitmapRegionDecoder
+import android.graphics.Rect
+import android.os.Build
 import androidx.compose.ui.graphics.asAndroidBitmap
 import coil3.ImageLoader
 import coil3.asImage
@@ -15,8 +19,10 @@ import com.oliverheyme.yomidojo.core.reader.CbzArchive
 import com.oliverheyme.yomidojo.core.reader.PageTarget
 import com.oliverheyme.yomidojo.core.reader.PdfPageProvider
 import com.oliverheyme.yomidojo.core.source.MangaSource
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import okio.Buffer
 import okio.BufferedSource
 import okio.FileSystem
@@ -36,22 +42,57 @@ class PageFetcher(
     private val options: Options,
     private val archives: CbzArchiveCache,
     private val pdfProviders: PdfProviderCache,
+    private val regionDecoders: RegionDecoderCache,
     private val pdfCacheDir: String,
 ) : Fetcher {
 
     override suspend fun fetch(): FetchResult {
         val locator = page.model.substringAfter(':')
         if (page.model.startsWith("pdf:")) return pdfPageAt(locator, page.index)
-        val bytes: BufferedSource = when {
-            page.model.startsWith("cbz:") -> cbzImageAt(locator, page.index)
-            page.model.startsWith("imgdir:") -> folderImageAt(locator, page.index)
-            else -> error("unsupported page model: ${page.model}")
-        }
+        if (page.sliceCount > 1) return sliceAt(locator)
+        val bytes = pageBytes(locator).use { it.readByteArray() }
+        tooTallFallback(bytes)?.let { return it }
         return SourceFetchResult(
-            source = ImageSource(bytes, FileSystem.SYSTEM),
+            source = ImageSource(Buffer().apply { write(bytes) }, FileSystem.SYSTEM),
             mimeType = null,
             dataSource = DataSource.DISK,
         )
+    }
+
+    /** A whole-page request for an image taller than [MAX_UNSLICED_PAGE_PX] (the webtoon reader
+     * asks before its slice counts are known; the paged modes always do) would otherwise decode at
+     * full height and fail to allocate a hardware bitmap. Downsample until it fits instead. */
+    private fun tooTallFallback(bytes: ByteArray): FetchResult? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outHeight <= MAX_UNSLICED_PAGE_PX) return null
+        var sampleSize = 2
+        while (bounds.outHeight / sampleSize > MAX_UNSLICED_PAGE_PX) sampleSize *= 2
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sampleSize })
+            ?: return null
+        return ImageFetchResult(image = bitmap.asImage(), isSampled = true, dataSource = DataSource.DISK)
+    }
+
+    private suspend fun pageBytes(locator: String): BufferedSource = when {
+        page.model.startsWith("cbz:") -> cbzImageAt(locator, page.index)
+        page.model.startsWith("imgdir:") -> folderImageAt(locator, page.index)
+        else -> error("unsupported page model: ${page.model}")
+    }
+
+    /** One horizontal band of a page too tall to decode whole (PLAN.md §8.2). */
+    private suspend fun sliceAt(locator: String): FetchResult {
+        val decoder = regionDecoders.get("${page.model}#${page.index}") { pageBytes(locator).use { it.readByteArray() } }
+        val width = decoder.width
+        val height = decoder.height
+        val top = (height.toLong() * page.slice / page.sliceCount).toInt()
+        val bottom = (height.toLong() * (page.slice + 1) / page.sliceCount).toInt()
+        val targetWidth = options.size.width.pxOrElse { width }
+        var sampleSize = 1
+        while (width / (sampleSize * 2) >= targetWidth) sampleSize *= 2
+        val bitmap = withContext(Dispatchers.IO) {
+            decoder.decodeRegion(Rect(0, top, width, bottom), BitmapFactory.Options().apply { inSampleSize = sampleSize })
+        } ?: error("could not decode slice ${page.slice} of page ${page.index}")
+        return ImageFetchResult(image = bitmap.asImage(), isSampled = sampleSize > 1, dataSource = DataSource.DISK)
     }
 
     private suspend fun folderImageAt(dirLocator: String, index: Int): BufferedSource {
@@ -83,8 +124,9 @@ class PageFetcher(
     ) : Fetcher.Factory<MangaPage> {
         private val archives = CbzArchiveCache()
         private val pdfProviders = PdfProviderCache()
+        private val regionDecoders = RegionDecoderCache()
         override fun create(data: MangaPage, options: Options, imageLoader: ImageLoader): Fetcher =
-            PageFetcher(data, source, options, archives, pdfProviders, pdfCacheDir)
+            PageFetcher(data, source, options, archives, pdfProviders, regionDecoders, pdfCacheDir)
     }
 
     private companion object {
@@ -155,6 +197,36 @@ class PdfProviderCache(private val maxOpen: Int = 2) {
         }
         provider.loadPage(index, target).asAndroidBitmap()
     }
+}
+
+/**
+ * Keeps the [BitmapRegionDecoder] for the last couple of sliced pages (PLAN.md §8.2), so a
+ * page's bands share one read of its bytes instead of each re-reading a multi-MB image.
+ * Evicted decoders aren't recycled explicitly — a band may still be decoding from one — and
+ * are left to the decoder's own finalizer.
+ */
+class RegionDecoderCache(private val maxOpen: Int = 2) {
+    private val mutex = Mutex()
+    private val open = LinkedHashMap<String, BitmapRegionDecoder>() // iteration order = LRU
+
+    suspend fun get(key: String, readBytes: suspend () -> ByteArray): BitmapRegionDecoder = mutex.withLock {
+        val decoder = open.remove(key) ?: newRegionDecoder(readBytes())
+        open[key] = decoder
+        while (open.size > maxOpen) {
+            val oldest = open.entries.iterator()
+            oldest.next()
+            oldest.remove()
+        }
+        decoder
+    }
+
+    private fun newRegionDecoder(bytes: ByteArray): BitmapRegionDecoder =
+        if (Build.VERSION.SDK_INT >= 31) {
+            BitmapRegionDecoder.newInstance(bytes, 0, bytes.size)
+        } else {
+            @Suppress("DEPRECATION")
+            BitmapRegionDecoder.newInstance(bytes, 0, bytes.size, false)
+        } ?: error("unsupported image format for region decoding")
 }
 
 private fun String.isImageName(): Boolean =

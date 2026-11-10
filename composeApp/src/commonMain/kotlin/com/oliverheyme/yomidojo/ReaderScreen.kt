@@ -124,6 +124,7 @@ fun ReaderScreen(
     val pageCount by viewModel.pageCount.collectAsState()
     val wideFlags by viewModel.wideFlags.collectAsState()
     val pageAspectRatios by viewModel.pageAspectRatios.collectAsState()
+    val pageSliceCounts by viewModel.pageSliceCounts.collectAsState()
 
     // Only the page count is required to start reading. Geometry may still be probing in the
     // background for a remote chapter, but blocking first paint on every page's aspect ratio
@@ -176,6 +177,7 @@ fun ReaderScreen(
                 viewModel = viewModel,
                 pageCount = pageCount,
                 pageAspectRatios = pageAspectRatios,
+                pageSliceCounts = pageSliceCounts,
                 readingMode = readingMode,
                 onReadingModeChange = viewModel::setReadingMode,
                 showChrome = showChrome,
@@ -397,6 +399,7 @@ private fun ContinuousReader(
     viewModel: ReaderViewModel,
     pageCount: Int,
     pageAspectRatios: List<Float>,
+    pageSliceCounts: List<Int>,
     readingMode: ReadingMode,
     onReadingModeChange: (ReadingMode) -> Unit,
     showChrome: Boolean,
@@ -419,9 +422,19 @@ private fun ContinuousReader(
     // auto-completed and cascaded into the next one (and the next…) before anyone had read them.
     var hasInteracted by remember { mutableStateOf(false) }
 
-    LaunchedEffect(listState) {
-        snapshotFlow { listState.firstVisibleItemIndex }.collect { index ->
-            viewModel.onPageChanged(index.coerceIn(0, pageCount - 1))
+    val geometryKnown by viewModel.pageGeometryKnown.collectAsState()
+    LaunchedEffect(listState, pageCount) {
+        // Sticky for this visit: scrolling back up after finishing doesn't un-read the chapter.
+        var reachedEnd = false
+        snapshotFlow {
+            val lastPage = listState.layoutInfo.visibleItemsInfo.firstOrNull { it.index == pageCount - 1 }
+            val lastPageBottomVisible = lastPage != null && lastPage.offset + lastPage.size <= listState.layoutInfo.viewportEndOffset
+            // hasInteracted/geometryKnown: before either, a page's on-screen height is a
+            // placeholder, and a short placeholder puts the "end" on screen at open.
+            listState.firstVisibleItemIndex.coerceIn(0, pageCount - 1) to (hasInteracted && geometryKnown && lastPageBottomVisible)
+        }.collect { (index, endVisible) ->
+            if (endVisible) reachedEnd = true
+            viewModel.onPageChanged(index, reachedEnd = reachedEnd)
         }
     }
 
@@ -558,6 +571,7 @@ private fun ContinuousReader(
                             // See cumulativeHeights above -- pageAspectRatios can briefly trail
                             // pageCount, so this needs the same safe-default fallback.
                             aspectRatio = pageAspectRatios.getOrElse(index) { 1f },
+                            sliceCount = pageSliceCounts.getOrElse(index) { 1 },
                             widthFraction = if (zoomedIn) 1f else scale,
                         )
                     }
@@ -1200,14 +1214,30 @@ private fun ReaderPage(
  * [widthFraction] shrinks (and, via [aspectRatio], proportionally shortens) the page itself when
  * zoomed out, rather than visually scaling a fixed-size layout — see [ContinuousReader]. */
 @Composable
-private fun WebtoonPage(pageModel: String, chapterSize: Long?, index: Int, aspectRatio: Float, widthFraction: Float) {
+private fun WebtoonPage(pageModel: String, chapterSize: Long?, index: Int, aspectRatio: Float, sliceCount: Int, widthFraction: Float) {
+    val description = stringResource(Res.string.content_desc_page_number, index + 1)
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        AsyncImage(
-            model = MangaPage(pageModel, index, chapterSize),
-            contentDescription = stringResource(Res.string.content_desc_page_number, index + 1),
-            contentScale = ContentScale.FillWidth,
-            modifier = Modifier.fillMaxWidth(widthFraction).aspectRatio(aspectRatio),
-        )
+        if (sliceCount <= 1) {
+            AsyncImage(
+                model = MangaPage(pageModel, index, chapterSize),
+                contentDescription = description,
+                contentScale = ContentScale.FillWidth,
+                modifier = Modifier.fillMaxWidth(widthFraction).aspectRatio(aspectRatio),
+            )
+        } else {
+            // Equal-height bands stacked with no gap: same total height as the unsliced page,
+            // so scroll positions and the zoom-out height model above are unaffected.
+            Column(Modifier.fillMaxWidth(widthFraction)) {
+                repeat(sliceCount) { slice ->
+                    AsyncImage(
+                        model = MangaPage(pageModel, index, chapterSize, slice = slice, sliceCount = sliceCount),
+                        contentDescription = if (slice == 0) description else null,
+                        contentScale = ContentScale.FillBounds,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(aspectRatio * sliceCount),
+                    )
+                }
+            }
+        }
     }
 }
 
