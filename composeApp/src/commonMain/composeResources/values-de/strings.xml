@@ -226,6 +226,10 @@
     <string name="settings_sync_background_subtitle">Aus: synchronisiert nur, während die App geöffnet ist — keine geplante Akku-/Netzwerknutzung</string>
     <string name="settings_sync_last_synced">Zuletzt synchronisiert: %1$s</string>
     <string name="settings_sync_not_synced_yet">Noch nicht synchronisiert</string>
+    <string name="settings_sync_last_background_sync">Letzte Hintergrund-Synchronisierung: %1$s</string>
+    <string name="settings_sync_no_background_sync_yet">Noch keine Hintergrund-Synchronisierung</string>
+    <string name="settings_metadata_statuses_updated">Erscheinungsstatus zuletzt aktualisiert: %1$s</string>
+    <string name="settings_metadata_statuses_not_updated">Erscheinungsstatus noch nicht aktualisiert</string>
     <string name="settings_sync_all_action">Jetzt alles synchronisieren</string>
     <string name="settings_sync_all_syncing">Synchronisiere…</string>
     <string name="settings_sign_out">Abmelden</string>

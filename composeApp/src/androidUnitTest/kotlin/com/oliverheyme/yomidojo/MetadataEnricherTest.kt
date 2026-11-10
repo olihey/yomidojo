@@ -33,6 +33,7 @@ class MetadataEnricherTest {
         }
         override suspend fun details(externalId: String): RemoteWorkDetails =
             detailsById.getValue(externalId)
+        override suspend fun statuses(externalIds: List<String>): Map<String, String> = emptyMap()
     }
 
     private fun newRepo(): LibraryRepository {
@@ -137,6 +138,7 @@ class MetadataEnricherTest {
                 return emptyList()
             }
             override suspend fun details(externalId: String): RemoteWorkDetails = error("not reached")
+            override suspend fun statuses(externalIds: List<String>): Map<String, String> = error("not reached")
         }
         val stuckEnricher = MetadataEnricher(
             repo, providerFor = { stuckProvider }, providerNamed = { null }, coverClient = HttpClient(), coversDir = "unused",

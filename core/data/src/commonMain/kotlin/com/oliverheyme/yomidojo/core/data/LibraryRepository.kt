@@ -483,6 +483,20 @@ class LibraryRepository(db: MangaDatabase) {
         q.selectUnmatchedSeries().executeAsList().map { it.id to it.title }
     }
 
+    /** Distinct (provider, externalId) pairs for matched series that aren't FINISHED yet — the
+     * weekly status refresh's work list (PLAN.md §9.5). */
+    suspend fun seriesForStatusRefresh(): List<Pair<String, String>> = withContext(ioDispatcher) {
+        q.selectSeriesForStatusRefresh().executeAsList().mapNotNull { row -> row.external_id?.let { row.provider to it } }
+    }
+
+    /** Applies [statuses] (externalId -> status) from one [provider] in a single transaction,
+     * touching only the status column — titles, covers and anything Fix Metadata set stay as is. */
+    suspend fun applyStatuses(provider: String, statuses: Map<String, String>) = withContext(ioDispatcher) {
+        q.transaction {
+            statuses.forEach { (externalId, status) -> q.updateStatusByProviderKey(status, provider, externalId) }
+        }
+    }
+
     /** Writes AniList-derived fields for one series — used by both the background
      * enrichment pipeline and the user-facing Fix Metadata re-match (PLAN.md §9, §9.1).
      * Deliberately its own query, not routed through [persistSeries]/upsertSeries, whose

@@ -51,21 +51,29 @@ class ScanWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
             }
             else -> SafMangaSource(applicationContext) to configBlob
         }
-        if (!source.canAccess(root)) return Result.success() // grant lost; UI will prompt re-grant
+        // Fresh AppPreferences from the same backing store the Activity uses — this worker
+        // builds its own throwaway object graph per run, same pattern as source selection
+        // above, so it always reads whatever provider is currently selected in Settings.
+        val appPrefs = AppPreferences(
+            SharedPreferencesSettings(applicationContext.getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
+        )
+        val providers = MetadataProviders(AniListMetadataProvider(), KitsuMetadataProvider())
+        val statusRefresher = StatusRefresher(repository, providers::byName, appPrefs)
+
+        if (!source.canAccess(root)) {
+            // Grant lost or share unreachable (UI will prompt re-grant). Statuses only need the
+            // internet, not the source, so they can still be refreshed.
+            statusRefresher.refreshIfDue()
+            return Result.success()
+        }
 
         return try {
             LibrarySyncer(repository, LibraryScanner(source)).sync(root)
             val coversDir = applicationContext.filesDir.resolve("covers").absolutePath
-            // Fresh AppPreferences from the same backing store the Activity uses — this worker
-            // builds its own throwaway object graph per run, same pattern as source selection
-            // above, so it always reads whatever provider is currently selected in Settings.
-            val appPrefs = AppPreferences(
-                SharedPreferencesSettings(applicationContext.getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
-            )
-            val providers = MetadataProviders(AniListMetadataProvider(), KitsuMetadataProvider())
             MetadataEnricher(
                 repository, { providers.get(appPrefs.metadataProvider.value) }, providers::byName, HttpClient(), coversDir,
             ).enrichPending()
+            statusRefresher.refreshIfDue()
             Result.success()
         } catch (t: Throwable) {
             android.util.Log.w("ScanWorker", "background scan failed", t)

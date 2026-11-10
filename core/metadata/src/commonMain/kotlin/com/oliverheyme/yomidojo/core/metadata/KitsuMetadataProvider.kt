@@ -22,6 +22,8 @@ import kotlin.math.roundToInt
 private const val KITSU_ENDPOINT = "https://kitsu.io/api/edge"
 private const val MIN_CALL_INTERVAL_MS = 500L
 private const val MAX_RETRIES = 3
+/** Kitsu's maximum `page[limit]`. */
+private const val STATUS_BATCH_SIZE = 20
 
 /**
  * Second metadata provider (PLAN.md §9.3) — public Kitsu JSON:API, no API key. Kitsu's
@@ -65,6 +67,19 @@ class KitsuMetadataProvider(
             append("include", "categories")
         }
         return response?.toRemoteWorkDetails() ?: error("Kitsu: no details for id $externalId")
+    }
+
+    override suspend fun statuses(externalIds: List<String>): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        externalIds.chunked(STATUS_BATCH_SIZE).forEach { batch ->
+            val response = execute<KitsuListResponse>("$KITSU_ENDPOINT/manga") {
+                append("filter[id]", batch.joinToString(","))
+                append("fields[manga]", "status")
+                append("page[limit]", batch.size.toString())
+            } ?: error("Kitsu: status batch failed")
+            response.data.forEach { resource -> normalizeStatus(resource.attributes.status)?.let { result[resource.id] = it } }
+        }
+        return result
     }
 
     /** Serialized (one call at a time, [MIN_CALL_INTERVAL_MS] apart) with 429 backoff — same

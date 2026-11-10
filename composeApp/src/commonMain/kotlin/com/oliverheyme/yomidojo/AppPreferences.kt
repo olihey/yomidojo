@@ -160,7 +160,25 @@ class AppPreferences(private val settings: Settings) {
         settings.putBoolean(KEY_BACKGROUND_SYNC_ENABLED, enabled)
     }
 
+    /** When [StatusRefresher] last completed a full pass without a failed request (PLAN.md
+     * §9.5). Null until the first one, so the first scan after install/update refreshes. */
+    val lastStatusRefreshAt: Long? get() = settings.getLongOrNull(KEY_LAST_STATUS_REFRESH_AT)
+
+    fun recordStatusRefreshCompleted(at: Long = nowEpochMillis()) {
+        settings.putLong(KEY_LAST_STATUS_REFRESH_AT, at)
+    }
+
+    /** When the periodic `SyncWorker` last finished a sync without throwing — unlike
+     * [lastSyncedAt], foreground syncs don't count. Null until the first one. */
+    val lastBackgroundSyncAt: Long? get() = settings.getLongOrNull(KEY_LAST_BACKGROUND_SYNC_AT)
+
+    fun recordBackgroundSyncCompleted(at: Long = nowEpochMillis()) {
+        settings.putLong(KEY_LAST_BACKGROUND_SYNC_AT, at)
+    }
+
     private companion object {
+        const val KEY_LAST_BACKGROUND_SYNC_AT = "app.lastBackgroundSyncAt"
+        const val KEY_LAST_STATUS_REFRESH_AT = "app.lastStatusRefreshAt"
         const val KEY_TITLE_LANGUAGE = "app.titleLanguage"
         const val KEY_START_SCREEN = "app.startScreen"
         const val KEY_METADATA_PROVIDER = "app.metadataProvider"

@@ -24,6 +24,8 @@ import kotlinx.serialization.json.Json
 private const val ANILIST_ENDPOINT = "https://graphql.anilist.co"
 private const val MIN_CALL_INTERVAL_MS = 2_000L
 private const val MAX_RETRIES = 3
+/** AniList's maximum `perPage`. */
+private const val STATUS_BATCH_SIZE = 50
 private val AUTHOR_ROLE_PRIORITY = listOf("Story & Art", "Story", "Original Creator", "Art")
 
 /**
@@ -54,6 +56,16 @@ class AniListMetadataProvider(
         val data = execute<DetailsRequest, DetailsData>(DetailsRequest(DETAILS_QUERY, IdVariables(id)))
         val media = data?.Media ?: error("AniList: no details for id $externalId")
         return media.toRemoteWorkDetails()
+    }
+
+    override suspend fun statuses(externalIds: List<String>): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        externalIds.mapNotNull { it.toIntOrNull() }.chunked(STATUS_BATCH_SIZE).forEach { batch ->
+            val data = execute<StatusesRequest, StatusesData>(StatusesRequest(STATUSES_QUERY, IdsVariables(batch)))
+                ?: error("AniList: status batch failed")
+            data.Page.media.forEach { media -> media.status?.let { result[media.id.toString()] = it } }
+        }
+        return result
     }
 
     /** Serialized (one call at a time, [MIN_CALL_INTERVAL_MS] apart) with 429 backoff. */
@@ -120,6 +132,17 @@ class AniListMetadataProvider(
                 siteUrl
                 staff(perPage: 25) {
                   edges { role node { name { full } } }
+                }
+              }
+            }
+        """
+
+        const val STATUSES_QUERY = """
+            query (${'$'}ids: [Int]) {
+              Page(perPage: 50) {
+                media(id_in: ${'$'}ids, type: MANGA) {
+                  id
+                  status
                 }
               }
             }
@@ -198,6 +221,12 @@ internal fun cleanDescription(raw: String?): String? {
 @Serializable private data class SearchVariables(val search: String)
 @Serializable private data class DetailsRequest(val query: String, val variables: IdVariables)
 @Serializable private data class IdVariables(val id: Int)
+@Serializable private data class StatusesRequest(val query: String, val variables: IdsVariables)
+@Serializable private data class IdsVariables(val ids: List<Int>)
+
+@Serializable private data class StatusesData(val Page: StatusesPage)
+@Serializable private data class StatusesPage(val media: List<MediaStatus> = emptyList())
+@Serializable private data class MediaStatus(val id: Int, val status: String? = null)
 
 @Serializable private data class SearchData(val Page: PageData)
 @Serializable private data class PageData(val media: List<MediaSummary> = emptyList())

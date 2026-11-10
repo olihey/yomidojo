@@ -48,6 +48,7 @@ class SyncWorker(appContext: Context, params: WorkerParameters) : CoroutineWorke
                 repository, driveBackend, aliasBackend, appPrefs::recordSyncCompleted, onAliasSyncCompleted,
                 favoritesBackend, onFavoriteSyncCompleted,
             ).sync()
+            appPrefs.recordBackgroundSyncCompleted()
             Result.success()
         } catch (t: Throwable) {
             android.util.Log.w("SyncWorker", "background sync failed", t)

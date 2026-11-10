@@ -162,6 +162,10 @@ fun SettingsScreen(
     val favoriteSyncEnabled by appPreferences.favoriteSyncEnabled.collectAsState()
     val lastFavoriteSyncedAt by appPreferences.lastFavoriteSyncedAt.collectAsState()
     val backgroundSyncEnabled by appPreferences.backgroundSyncEnabled.collectAsState()
+    // Plain reads rather than StateFlows: background workers write these through their own
+    // AppPreferences instance, so a flow on this instance would never see the update.
+    val lastBackgroundSyncAt = remember { appPreferences.lastBackgroundSyncAt }
+    val lastStatusRefreshAt = remember { appPreferences.lastStatusRefreshAt }
     val sync by syncState.collectAsState()
 
     Column(Modifier.fillMaxSize().background(MangaColors.Bg)) {
@@ -200,6 +204,12 @@ fun SettingsScreen(
                     MetadataProviderChoice.entries.forEach { choice ->
                         SettingsRadioRow(choice.label(), selected = choice == metadataProvider, archivo, onClick = { appPreferences.setMetadataProvider(choice) })
                     }
+                    Text(
+                        lastStatusRefreshAt?.let { stringResource(Res.string.settings_metadata_statuses_updated, formatDateTime(it)) }
+                            ?: stringResource(Res.string.settings_metadata_statuses_not_updated),
+                        color = SyncBylineColor, fontFamily = archivo, fontWeight = FontWeight.Medium, fontSize = 11.sp,
+                        modifier = Modifier.padding(start = 6.dp, top = 8.dp),
+                    )
                 }
 
                 SettingsSection(stringResource(Res.string.settings_section_reading_mode), stringResource(Res.string.settings_section_reading_mode_desc), archivo) {
@@ -257,6 +267,8 @@ fun SettingsScreen(
                                 SettingsSwitchRow(
                                     stringResource(Res.string.settings_sync_background_title), stringResource(Res.string.settings_sync_background_subtitle),
                                     checked = backgroundSyncEnabled, archivo, onCheckedChange = onBackgroundSyncEnabledChanged,
+                                    byline = lastBackgroundSyncAt?.let { stringResource(Res.string.settings_sync_last_background_sync, formatDateTime(it)) }
+                                        ?: stringResource(Res.string.settings_sync_no_background_sync_yet),
                                 )
                             }
                             // Manual trigger for the same pull/merge/apply/push pass requestSync's

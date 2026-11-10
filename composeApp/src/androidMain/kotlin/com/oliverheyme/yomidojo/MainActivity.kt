@@ -140,6 +140,7 @@ class MainActivity : ComponentActivity() {
             repository, scanner, source, localSource, smbSourceFactory, oneDriveSourceFactory, googleDriveSourceFactory, prefs, enricher, appPrefs, coversDir,
             clearImageCache = { imageLoader.diskCache?.clear(); imageLoader.memoryCache?.clear() },
             requestSync = syncScheduler::requestSync,
+            statusRefresher = StatusRefresher(repository, metadataProviders::byName, appPrefs),
         )
         readerPrefs = ReaderPreferences(
             SharedPreferencesSettings(getSharedPreferences("manga_prefs", Context.MODE_PRIVATE)),
@@ -320,10 +321,18 @@ class MainActivity : ComponentActivity() {
     /** Keep the library fresh in the background (no-ops if no root/grant — see ScanWorker). */
     private fun scheduleBackgroundScan() {
         val request = PeriodicWorkRequestBuilder<ScanWorker>(12, TimeUnit.HOURS)
-            .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiresBatteryNotLow(true)
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build(),
+            )
             .build()
+        // UPDATE, not KEEP: KEEP would leave already-installed devices on their old request
+        // (without the network constraint) forever. UPDATE swaps the constraints in place and
+        // keeps the existing schedule.
         WorkManager.getInstance(applicationContext)
-            .enqueueUniquePeriodicWork("library-scan", ExistingPeriodicWorkPolicy.KEEP, request)
+            .enqueueUniquePeriodicWork("library-scan", ExistingPeriodicWorkPolicy.UPDATE, request)
     }
 
     /** Keep reading progress in sync in the background (PLAN.md §10; no-ops if signed out or

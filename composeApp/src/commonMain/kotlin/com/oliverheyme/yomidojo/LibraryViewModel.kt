@@ -80,6 +80,8 @@ class LibraryViewModel(
     private val clearImageCache: () -> Unit = {},
     /** Debounced cloud-sync trigger (PLAN.md §10) — see [AppGraph.requestSync]. */
     private val requestSync: () -> Unit = {},
+    /** Weekly publication-status refresh (PLAN.md §9.5), run after each scan's enrichment pass. */
+    private val statusRefresher: StatusRefresher? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
     private val syncer = LibrarySyncer(repository, scanner)
@@ -376,7 +378,8 @@ class LibraryViewModel(
         scope.launch {
             val type = repository.savedSourceType()
             val configBlob = repository.savedLocalRoot()
-            resolveScanRoot(type, configBlob)?.let { runScan(it) }
+            // The refresh button is the manual way to pull status changes before the week is up.
+            resolveScanRoot(type, configBlob)?.let { runScan(it, forceStatusRefresh = true) }
         }
     }
 
@@ -440,7 +443,7 @@ class LibraryViewModel(
         }
     }
 
-    private suspend fun runScan(rootLocator: String) {
+    private suspend fun runScan(rootLocator: String, forceStatusRefresh: Boolean = false) {
         if (_progress.value != null) return
         if (!source.canAccess(rootLocator)) { _needsReGrant.value = true; return }
         _progress.value = ScanProgress(0, 0)
@@ -467,6 +470,7 @@ class LibraryViewModel(
             } finally {
                 _enrichProgress.value = null
             }
+            statusRefresher?.refreshIfDue(force = forceStatusRefresh)
         }
     }
 }

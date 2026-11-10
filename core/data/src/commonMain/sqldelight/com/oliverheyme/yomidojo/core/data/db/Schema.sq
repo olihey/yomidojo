@@ -150,6 +150,20 @@ WHERE id = ?;
 markMetadataChecked:
 UPDATE series SET metadata_checked_at = ? WHERE id = ?;
 
+-- Matched works whose publication status could still change -- the weekly status refresh's
+-- work list (§9.5). FINISHED is skipped since it practically never changes back. A NULL
+-- metadata_provider predates the v4->v5 migration, when AniList was the only provider.
+selectSeriesForStatusRefresh:
+SELECT DISTINCT COALESCE(metadata_provider, 'ANILIST') AS provider, external_id
+FROM series
+WHERE external_id IS NOT NULL AND (status IS NULL OR status != 'FINISHED');
+
+-- Keyed by (provider, external_id), not series id: two series rows can share one match.
+-- "IS NOT" skips rows that already hold this status, so unchanged rows aren't rewritten.
+updateStatusByProviderKey:
+UPDATE series SET status = :status
+WHERE COALESCE(metadata_provider, 'ANILIST') = :provider AND external_id = :externalId AND status IS NOT :status;
+
 -- Persists an unmatched series' live-extracted first-page cover (§9.4) so it survives Coil's
 -- disk cache being cleared. Guarded by "IS NULL" so it never overwrites a real matched cover.
 setCoverPathIfMissing:

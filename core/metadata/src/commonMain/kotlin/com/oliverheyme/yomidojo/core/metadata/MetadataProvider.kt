@@ -9,6 +9,12 @@ package com.oliverheyme.yomidojo.core.metadata
 interface MetadataProvider {
     suspend fun search(title: String): List<RemoteWork>
     suspend fun details(externalId: String): RemoteWorkDetails
+
+    /** Current publication status (normalized like [RemoteWorkDetails.status]) for many
+     * already-matched works in as few requests as the provider allows — the weekly status
+     * refresh (PLAN.md §9.5). Ids the provider doesn't know, or has no status for, are omitted.
+     * Throws if a request fails, so the caller can retry later instead of recording success. */
+    suspend fun statuses(externalIds: List<String>): Map<String, String>
 }
 
 data class RemoteWork(

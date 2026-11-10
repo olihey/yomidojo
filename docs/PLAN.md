@@ -1260,6 +1260,40 @@ Separately confirmed the cache key *does* change on a real match: after Fix Meta
 `external_id`, the grid tile correctly swapped to the newly downloaded cover instead of staying
 stuck on the locally-cached first page.
 
+### 9.5 Weekly publication-status refresh (added 2026-11-10)
+
+Enrichment (§9.2) fetches a series' metadata once, when it's first matched, and never again —
+but `status` changes over time (RELEASING → FINISHED, → HIATUS, …), which made the "Show
+completed" library filter drift out of date. `StatusRefresher` (`composeApp/.../StatusRefresher.kt`)
+re-fetches **only the status** of every matched series that isn't FINISHED yet, at most once a week.
+
+- **Batched, not per-series.** New `MetadataProvider.statuses(ids)` — AniList via
+  `Page(perPage: 50) { media(id_in: …) { id status } }`, Kitsu via
+  `/manga?filter[id]=a,b,c&fields[manga]=status` (max 20 per page). Both verified live before
+  implementing; unknown ids are simply omitted. A ~300-series library costs ~6–15 requests
+  through each provider's existing throttle, instead of one 2s-spaced `details()` call per series.
+- **Only the `status` column is written** (`updateStatusByProviderKey`, keyed by
+  (provider, external_id) since two series rows can share a match). Titles, covers, banners and
+  anything Fix Metadata set are untouched; nothing is re-downloaded.
+- **FINISHED is skipped** — it practically never changes back. A NULL `metadata_provider` means
+  AniList (rows matched before the v4→v5 migration, which didn't backfill the column).
+- **When it runs:** after every scan's enrichment pass — foreground (`LibraryViewModel.runScan`)
+  and background (`ScanWorker`) — gated by `AppPreferences.lastStatusRefreshAt` (7 days). The
+  refresh button (`LibraryViewModel.rescan`) forces it regardless of the gate. `ScanWorker` also
+  runs it when the source itself is unreachable (e.g. an SMB share away from home), since statuses
+  only need the internet. No Settings option — deliberately automatic.
+- **Failure handling:** any failed provider request leaves the timestamp unrecorded, so the next
+  scan retries; providers that did succeed still apply their results.
+- **Visible in Settings:** a "Release statuses last updated …" line under the Metadata provider
+  options, read from `lastStatusRefreshAt` each time Settings opens.
+
+`ScanWorker`'s periodic request also gained a **`NetworkType.CONNECTED` constraint** (§15) —
+offline runs now wait for a connection instead of failing against a network source. This also
+delays background scans of a purely local (SAF) library while offline; accepted. Scheduled with
+`ExistingPeriodicWorkPolicy.UPDATE` (was `KEEP`), since `KEEP` would have left already-installed
+devices on the old constraint-less request forever. Verified on-device via `dumpsys jobscheduler`:
+the existing scan job now lists `CONNECTIVITY` among its required constraints.
+
 ---
 
 ## 10. Cross-device read-status sync
@@ -1756,6 +1790,11 @@ convergence check that marking a chapter read on one shows read on the other aft
   disappears/reappears with the toggle, and that the off state survives an app restart without
   the job being silently rescheduled. Sign-in sync and the debounced per-change sync above are
   unaffected, since both only run while the app is already open.
+- **"Last background sync" byline (2026-11-10)** under that toggle — `AppPreferences.lastBackgroundSyncAt`,
+  recorded only by `SyncWorker` after a sync completes without throwing (the "Last synced" bylines
+  above count foreground syncs too). A plain settings read, not a `StateFlow`: the worker writes
+  through its own `AppPreferences` instance, so a flow on the Activity's instance would never
+  update; Settings re-reads it each time it opens.
 
 **"Sync all now" manual trigger (2026-07-15).** A link in Settings' Cloud sync section, right
 above "Sign out", running the exact same pull/merge/apply/push pass as `requestSync`'s debounced

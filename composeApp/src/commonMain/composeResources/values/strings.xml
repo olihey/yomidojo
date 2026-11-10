@@ -226,6 +226,10 @@
     <string name="settings_sync_background_subtitle">Off: only syncs while the app is open — no scheduled battery/network use</string>
     <string name="settings_sync_last_synced">Last synced %1$s</string>
     <string name="settings_sync_not_synced_yet">Not synced yet</string>
+    <string name="settings_sync_last_background_sync">Last background sync %1$s</string>
+    <string name="settings_sync_no_background_sync_yet">No background sync yet</string>
+    <string name="settings_metadata_statuses_updated">Release statuses last updated %1$s</string>
+    <string name="settings_metadata_statuses_not_updated">Release statuses not updated yet</string>
     <string name="settings_sync_all_action">Sync all now</string>
     <string name="settings_sync_all_syncing">Syncing…</string>
     <string name="settings_sign_out">Sign out</string>
